@@ -1375,7 +1375,7 @@ void fDoBiosTuning(void)
 	fflush(tunLogPtr);
 
 	fDoCpuPerformance();
-//	fDoIrqBalance();
+	fDoIrqBalance();
 
 #if 0
 	/* find additional things that could be tuned */
@@ -2415,7 +2415,7 @@ void fDoNicTuning(void)
 #endif
 	fDoMTU();
 	fDoTcQdiscFq();
-	fDoIrqBalance();
+	//fDoIrqBalance();
 #if 0
 	fDoFlowControl();
 #endif
