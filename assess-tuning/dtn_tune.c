@@ -33,7 +33,6 @@ void fDoSystemtuning(void);
 void fDo_lshw(void);
 int fCheckForNicsAndSpeeds();
 
-static int gInterval = 2000; //default
 static int netDeviceSpeed = 0;
 static int numaNode = 0;
 static int netDevice_rx_ring_buff_cfg_max_val = 0;
@@ -349,7 +348,7 @@ return tmpSpeed;
 }
 
 /* Must change NUMUSERVALUES below if adding more values */
-#define NUMUSERVALUES	7
+#define NUMUSERVALUES	5
 #define USERVALUEMAXLENGTH	256
 typedef struct {
 	char aUserValues[USERVALUEMAXLENGTH];
@@ -357,9 +356,7 @@ typedef struct {
 	char cfg_value[32];
 } sUserValues_t[NUMUSERVALUES];
 
-sUserValues_t userValues = {{"evaluation_timer", "2000", "-1"},
-			{"learning_mode_only","y","-1"},
-			{"API_listen_port","5523","-1"},
+sUserValues_t userValues = {{"learning_mode_only","y","-1"},
 			{"apply_default_system_tuning","n","-1"},
 			{"apply_bios_tuning","n","-1"},
 			{"apply_nic_tuning","n","-1"},
@@ -436,48 +433,38 @@ void fDoGetUserCfgValues(void)
 	{	int vPad = PAD_MAX-(strlen(userValues[count].aUserValues));
 		//int vPad = PAD_MAX-(strlen(userValues[count].aUserValues) - CONST_PAD);
 		fprintf(tunLogPtr,"%s %*s %20s\n",userValues[count].aUserValues, vPad, userValues[count].default_val, userValues[count].cfg_value);
-		if (strcmp(userValues[count].aUserValues,"evaluation_timer") == 0)
+		if (strcmp(userValues[count].aUserValues,"learning_mode_only") == 0)
 		{
-			int cfg_val = atoi(userValues[count].cfg_value);
-			if (cfg_val == -1) //wasn't set properly
-				gInterval = atoi(userValues[count].default_val);
-			else
-				gInterval = cfg_val;
+			if (userValues[count].cfg_value[0] == 'n') 
+				gTuningMode = 1;
 		}
 		else
-			if (strcmp(userValues[count].aUserValues,"learning_mode_only") == 0)
+			if (strcmp(userValues[count].aUserValues,"apply_default_system_tuning") == 0)
 			{
-				if (userValues[count].cfg_value[0] == 'n') 
-					gTuningMode = 1;
+				if (userValues[count].cfg_value[0] == 'y') 
+					gApplyDefSysTuning = 'y';
 			}
 			else
-				if (strcmp(userValues[count].aUserValues,"apply_default_system_tuning") == 0)
+				if (strcmp(userValues[count].aUserValues,"apply_bios_tuning") == 0)
 				{
-					if (userValues[count].cfg_value[0] == 'y') 
-						gApplyDefSysTuning = 'y';
+					if (userValues[count].cfg_value[0] == 'y')
+						gApplyBiosTuning = 'y';
 				}
 				else
-					if (strcmp(userValues[count].aUserValues,"apply_bios_tuning") == 0)
+					if (strcmp(userValues[count].aUserValues,"apply_nic_tuning") == 0)
 					{
 						if (userValues[count].cfg_value[0] == 'y')
-							gApplyBiosTuning = 'y';
+							gApplyNicTuning = 'y';
 					}
 					else
-						if (strcmp(userValues[count].aUserValues,"apply_nic_tuning") == 0)
+						if (strcmp(userValues[count].aUserValues,"make_default_system_tuning_perm") == 0)
 						{
-							if (userValues[count].cfg_value[0] == 'y')
-								gApplyNicTuning = 'y';
+							if (userValues[count].cfg_value[0] == 'y') 
+								gMakeTuningPermanent = 'y';
 						}
-						else
-							if (strcmp(userValues[count].aUserValues,"make_default_system_tuning_perm") == 0)
-							{
-								if (userValues[count].cfg_value[0] == 'y') 
-									gMakeTuningPermanent = 'y';
-							}
-		}
+	}
 
 	gettime(&clk, ctime_buf);
-	//fprintf(tunLogPtr,"\n%s ***Using 'evaluation_timer' with value %d***\n", ctime_buf, gInterval);
 	free(line); //must free
 	return;
 }
@@ -1527,7 +1514,7 @@ int fDoGetNuma(void)
 }
 
 
-static int rec_txqueuelen_Greater10G = 20000; //recommended value for now if greater 10G
+static int rec_txqueuelen_Equal100G = 20000; //recommended value for now if equal 100G
 static int rec_txqueuelen = 1000; //recommended value for now if 10G or less
 static int rec_mtu = 9200; //recommended value for now
 static char * rec_tcqdisc = "fq"; //recommended value for now
@@ -1577,7 +1564,7 @@ void fDoTxQueueLen()
 						fprintf(tunLogPtr,"%s", "txqueuelen"); //redundancy for visual
 						fprintf(tunLogPtr,"%*s", vPad, sValue);
 
-						if (netDeviceSpeed <= 10000) //10G or less
+						if (netDeviceSpeed < 100000) //less than 100G 
 						{
 							if (rec_txqueuelen > cfg_val)
 							{
@@ -1599,27 +1586,27 @@ void fDoTxQueueLen()
 							else
 								fprintf(tunLogPtr,"%26d %20s\n", rec_txqueuelen, "na");
 						}
-						else //greater than 10G
+						else //greater than or equal to 100G
 							{
-								if (rec_txqueuelen_Greater10G > cfg_val)
+								if (rec_txqueuelen_Equal100G > cfg_val)
 								{
-									fprintf(tunLogPtr,"%26d %20c\n", rec_txqueuelen_Greater10G, gApplyNicTuning);
+									fprintf(tunLogPtr,"%26d %20c\n", rec_txqueuelen_Equal100G, gApplyNicTuning);
 									if (gApplyNicTuning == 'y')
 									{
 										//Apply Inital DefSys Tuning
-										sprintf(aNicSetting,"ifconfig %s txqueuelen %d", netDevice, rec_txqueuelen_Greater10G);
+										sprintf(aNicSetting,"ifconfig %s txqueuelen %d", netDevice, rec_txqueuelen_Equal100G);
 										system(aNicSetting);
 									}
 									else
 										{
 											//Save in Case Operator want to apply from menu
-											sprintf(aNicSetting,"ifconfig %s txqueuelen %d", netDevice, rec_txqueuelen_Greater10G);
+											sprintf(aNicSetting,"ifconfig %s txqueuelen %d", netDevice, rec_txqueuelen_Equal100G);
 											memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
 											aApplyNicDefTunCount++;
 										}
 								}
 								else
-									fprintf(tunLogPtr,"%26d %20s\n", rec_txqueuelen_Greater10G, "na");
+									fprintf(tunLogPtr,"%26d %20s\n", rec_txqueuelen_Equal100G, "na");
 							}
 					}
 
