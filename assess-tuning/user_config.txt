@@ -1,6 +1,4 @@
-evaluation_timer		2000
 learning_mode_only		y
-API_listen_port			5523
 apply_bios_tuning		n
 apply_nic_tuning		n
 apply_default_system_tuning	n

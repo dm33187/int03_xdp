@@ -183,7 +183,7 @@ apply_recommended_nic_settings()
 		rm -f /tmp/tun_app_command
 		rm -f /tmp/applyNicDefFile
 	else
-		printf '\n###%s\n\n' "Sorry. You do not have any Tuning Recommendations to apply..."
+		printf '\n###%s\n\n' "Sorry. You do not have any NIC Tuning Recommendations to apply..."
 
 	fi
     enter_to_continue
