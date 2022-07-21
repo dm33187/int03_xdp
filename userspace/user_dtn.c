@@ -377,15 +377,18 @@ void record_activity(void)
 	time_t clk;
 	char ctime_buf[27];
 
+	static __u32 myCount = 0;
 	gettime(&clk, ctime_buf);
-	sprintf(activity,"%s %s: ***hop_key.hop_index %X, Doing Something***vFlowcount = %d, num_tuning_activty = %d", ctime_buf, phase2str(current_phase), curr_hop_key_hop_index, vFlowCount, sFlowCounters[vFlowCount].num_tuning_activities + 1);
+	sprintf(activity,"%s %s: ***hop_key.hop_index %X, Doing Something***vFlowcount = %d, num_tuning_activty = %d, myCount = %u", ctime_buf, phase2str(current_phase), curr_hop_key_hop_index, vFlowCount, sFlowCounters[vFlowCount].num_tuning_activities + 1, myCount++);
 
 	fprintf(tunLogPtr,"%s\n",activity); //special case for testing
 
 	strcpy(sFlowCounters[vFlowCount].what_was_done[sFlowCounters[vFlowCount].num_tuning_activities], activity);
 	(sFlowCounters[vFlowCount].num_tuning_activities)++;
-	if (sFlowCounters[vFlowCount].num_tuning_activities >= MAX_TUNING_ACTIVITIES_PER_FLOW)
+	if (sFlowCounters[vFlowCount].num_tuning_activities == MAX_TUNING_ACTIVITIES_PER_FLOW)
+	{
 		sFlowCounters[vFlowCount].num_tuning_activities = 0;
+	}
 
 	gFlowCountUsed = 1;	
 
@@ -529,13 +532,14 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 
 		fflush(tunLogPtr);
 	}
-
+#if 0
 	if (gFlowCountUsed)
 	{	
-		if (++vFlowCount == NUM_OF_FLOWS_TO_KEEP_TRACK_OF) vFlowCount = 0;
+	//	if (++vFlowCount == NUM_OF_FLOWS_TO_KEEP_TRACK_OF) vFlowCount = 0;
 		sFlowCounters[vFlowCount].num_tuning_activities = 0;
 		gFlowCountUsed = 0;
 	}
+#endif			
 }
 
 void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt)
@@ -601,6 +605,22 @@ void check_req(http_s *h, char aResp[])
 		fprintf(tunLogPtr,"%s %s: ***Applying recommended Tuning now***\n", ctime_buf, phase2str(current_phase));
 		sprintf(aHttpRequest,"sh ./user_menu.sh apply_all_recommended_settings");
 		system(aHttpRequest);
+		goto after_check;
+	}
+
+	if (strstr(pReqData,"GET /-pc"))
+	{
+		//Get counters
+		if (sFlowCounters[vFlowCount].num_tuning_activities == 0 && gFlowCountUsed)
+			strcpy(aResp,sFlowCounters[vFlowCount].what_was_done[MAX_TUNING_ACTIVITIES_PER_FLOW - 1]);
+		else
+			if (sFlowCounters[vFlowCount].num_tuning_activities == 0)
+				strcpy(aResp,"***No tuning activity has happened so far***\n");
+			else
+				strcpy(aResp, sFlowCounters[vFlowCount].what_was_done[sFlowCounters[vFlowCount].num_tuning_activities - 1]);
+
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to provide counters of tuning activities throughout data transfer***\n", ctime_buf, phase2str(current_phase));
 		goto after_check;
 	}
 
