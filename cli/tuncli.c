@@ -5,6 +5,7 @@ static void on_response(http_s *h);
 
 static char * Usage = "This is an HTTP client to talk to Tuning Module. \
 		       \nUse \"tuncli -t\" to apply tunings that were recommended. \
+		       \nUse \"tuncli -pc\" to provide counters of activities performed per flow. \
 		       \nUse \"tuncli -b rx [value]\" to change RX ring buffer size of the NIC. \
 		       \nUse \"tuncli -b tx [value]\" to change TX ring buffer size of the NIC. \
 		       \nUse \"tuncli -b sock_rx_buff [value]\" to change the maximum OS receive buffer size for all types of connections. \
@@ -37,7 +38,7 @@ int main(int argc, const char *argv[])
 	if (argc < 2 || argc > 4)
 		goto leave;
 
-	if ((strcmp(argv[1],"-t") == 0) && argc == 2)
+	if (((strcmp(argv[1],"-t") == 0) || (strcmp(argv[1], "-pc") == 0)) && argc == 2)
 	{
 		strcpy(aSecondPart,argv[1]);
 		goto carry_on;
