@@ -164,11 +164,6 @@ const char *pin_basedir =  "/sys/fs/bpf";
 #include <net/if.h>
 #include <linux/if_link.h> /* depend on kernel-headers installed */
 
-#include "../common/common_params.h"
-#include "../common/common_user_bpf_xdp.h"
-#include "common_kern_user.h"
-#include "bpf_util.h" /* bpf_num_possible_cpus */
-
 typedef struct {
 	int argc;
 	char ** argv;
