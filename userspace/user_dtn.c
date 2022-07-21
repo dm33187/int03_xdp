@@ -164,11 +164,6 @@ const char *pin_basedir =  "/sys/fs/bpf";
 #include <net/if.h>
 #include <linux/if_link.h> /* depend on kernel-headers installed */
 
-#include "../common/common_params.h"
-#include "../common/common_user_bpf_xdp.h"
-#include "common_kern_user.h"
-#include "bpf_util.h" /* bpf_num_possible_cpus */
-
 typedef struct {
 	int argc;
 	char ** argv;
@@ -547,7 +542,6 @@ void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt)
 	time_t clk;
 	char ctime_buf[27];
 
-	//fprintf(stderr, "Missed %llu sets of packet metadata.\n", cnt);
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr, "%s %s: Missed %llu sets of packet metadata.\n", ctime_buf, phase2str(current_phase), cnt);
 	fflush(tunLogPtr);
@@ -1003,7 +997,7 @@ start:
 				printf("DEV %s: TX : %lu kb/s RX : %lu kb/s, RX_MISD_ERRS/s : %lu, secs_passed %lu\n", netDevice, tx_bits_per_sec, rx_bits_per_sec, rx_missed_errs_tot/secs_passed, secs_passed);
 			}
 			break;
-}
+		}
 #else
 			tx_bits_per_sec = ((tx_bytes_tot) / 1024) / secs_passed; //really bytes per sec
 			rx_bits_per_sec = ((rx_bytes_tot) / 1024) / secs_passed; //really bytes per sec
@@ -1012,20 +1006,20 @@ start:
 //			stage = 0;
 			break;
 #endif
-			else
-				{
-					printf("Not working****\n");
-					return ((char *) 0);
-				}
-		}
+		else
+			{
+				printf("Not working****\n");
+				return ((char *) 0);
+			}
+	}
 
-		if (stage)
-		{
-			stage = 0;
-			goto start;
-		}
+	if (stage)
+	{
+		stage = 0;
+		goto start;
+	}
 
-		printf("Problems*** stage not set...\n");
+	printf("Problems*** stage not set...\n");
 
 return ((char *) 0);
 }
@@ -1047,17 +1041,17 @@ void * fDoRunFindHighestRtt(void * vargp)
 	sprintf(try,"sudo bpftrace -e \'BEGIN { @ca_rtt_us;} kprobe:tcp_ack_update_rtt { @ca_rtt_us = arg4; } kretprobe:tcp_ack_update_rtt /pid != 0/ { printf(\"%s\\n\", @ca_rtt_us); } interval:s:5 {  exit(); } END { clear(@ca_rtt_us); }\'", "%ld");
 
 rttstart:
-		highest_rtt = 0;
-		pipe = popen(try,"r");
-		if (!pipe)
-		{
-			printf("popen failed!\n");
-			return (char *) -1;
-		}
+	highest_rtt = 0;
+	pipe = popen(try,"r");
+	if (!pipe)
+	{
+		printf("popen failed!\n");
+		return (char *) -1;
+	}
 
-		//get the first line and forget about it
-		if (fgets(buffer, 128, pipe) != NULL);
-		else
+	//get the first line and forget about it
+	if (fgets(buffer, 128, pipe) != NULL);
+	else
 		{
 			printf(" Not finished****\n");
 			pclose(pipe);
@@ -1065,33 +1059,34 @@ rttstart:
 		}
 
 		// read until process exits after "interval" seconds above
-		while (!feof(pipe))
-		{
-			// use buffer to read and add to result
-			if (fgets(buffer, 128, pipe) != NULL);
-			else
+	while (!feof(pipe))
+	{
+		// use buffer to read and add to result
+		if (fgets(buffer, 128, pipe) != NULL);
+		else
 			{
 				goto finish_up;
 				return (char *)-2;
 			}
-			sscanf(buffer,"%lu", &rtt);
-			if (rtt > highest_rtt)
-				highest_rtt = rtt;
+		sscanf(buffer,"%lu", &rtt);
+		if (rtt > highest_rtt)
+			highest_rtt = rtt;
 
-			if (vDebugLevel > 3)
-				printf("**rtt = %luus, highest rtt = %luus\n",rtt, highest_rtt);
-		}
+		if (vDebugLevel > 3)
+			printf("**rtt = %luus, highest rtt = %luus\n",rtt, highest_rtt);
+	}
+
 finish_up:
-		pclose(pipe);
+	pclose(pipe);
 
-		if (highest_rtt)
-		{
-			if (vDebugLevel > 2)
-				printf("***highest rtt is %.3fms\n", highest_rtt/(double)1000);
-		}
+	if (highest_rtt)
+	{
+		if (vDebugLevel > 2)
+			printf("***highest rtt is %.3fms\n", highest_rtt/(double)1000);
+	}
 
-		sleep(3); //check again in 3 secs
-		goto rttstart;
+	sleep(3); //check again in 3 secs
+	goto rttstart;
 
 return ((char *) 0);
 }
