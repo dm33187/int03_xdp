@@ -22,7 +22,6 @@ void fDoGetDeviceCap(void);
 void fDoBiosTuning(void);
 void fDoNicTuning(void);
 void fDoSystemtuning(void);
-void fDo_lshw(void);
 
 int gInterval = 2000; //default
 int gAPI_listen_port = 5523; //default listening port
@@ -39,7 +38,6 @@ char gApplyNicTuning = 'n';
 char gApplyDefSysTuning = 'n';
 char gMakeTuningPermanent = 'n';
 int gMaxnum_tuning_logs = 10; //default
-//char vHaveNetDevice = 0;
 
 enum workflow_phases current_phase = STARTING;
 
@@ -276,121 +274,6 @@ void fDoGetUserCfgValues(void)
 	return;
 }
 
-void fDo_lshw(void)
-{
-	char *line = NULL;
-	size_t len = 0;
-	ssize_t nread;
-	char *p = 0;
-	int count = 0, found = 0;
-	FILE * lswh_ptr = 0;
-	int state = 0;
-	char savesize[16];
-	char savecap[16];
-	char savelinesize[256];
-	time_t clk;
-	char ctime_buf[27];
-
-	system("sudo lshw > /tmp/lswh_output 2>&1");
-
-	lswh_ptr = fopen("/tmp/lswh_output","r");
-	gettime(&clk, ctime_buf);
-	if (!lswh_ptr)
-	{
-		fprintf(tunLogPtr,"%s %s: Could not open lswh file to check more comparisons.\n", ctime_buf, phase2str(current_phase));
-		return;
-	}
-
-	while (((nread = getline(&line, &len, lswh_ptr)) != -1) && !found) 
-	{
-		switch (state) {
-			case 0:
-	    			if (strstr(line,"*-memory\n"))
-	    			{
-					gettime(&clk, ctime_buf);
-    					fprintf(tunLogPtr,"\n%s %s: The utility 'lshw' reports for memory:\n", ctime_buf, phase2str(current_phase));
-					count++;
-					state = 1;
-				}
-				break;
-
-			case 1:
-				if ((p = strstr(line,"size: ")))
-				{
-					state = 2;
-					p = p + 6; //sizeof "size: "	
-					if (isdigit((int)*p))
-					{
-						int y = 0;
-						memset(savesize,0,sizeof(savesize));
-						while (isdigit((int)*p))
-						{
-							savesize[y] = *p;
-							p++;
-						}
-						strncpy(savelinesize,line, sizeof(savelinesize));
-					}
-					else
-						{
-							gettime(&clk, ctime_buf);
-    							fprintf(tunLogPtr,"%s %s: memory size in lshw is not numerical***\n", ctime_buf, phase2str(current_phase));
-							free(line);
-							return; // has to be a digit
-						}
-				}
-				break;
-
-			case 2:
-				if ((p = strstr(line,"capacity: ")))
-				{
-					state = 3;
-					p = p + 10; //sizeof "capacity: "	
-					if (isdigit((int)*p))
-					{
-						int y = 0;
-						memset(savecap,0,sizeof(savecap));
-						while (isdigit((int)*p))
-						{
-							savecap[y] = *p;
-							p++;
-						}
-					}
-					else
-						{
-							gettime(&clk, ctime_buf);
-    							fprintf(tunLogPtr,"%s %s: memory size in lshw is not numerical***\n", ctime_buf, phase2str(current_phase));
-							free(line);
-							return; // has to be a digit
-						}
-									
-						gettime(&clk, ctime_buf);
-
-						if (strcmp(savecap,savesize) == 0)
-						{
-							fprintf(tunLogPtr,"%s %s: maximum memory installed in system\n", ctime_buf, phase2str(current_phase));
-							fprintf(tunLogPtr,"%62s",line);
-							fprintf(tunLogPtr,"%62s",savelinesize);
-						}
-						else
-							{
-								fprintf(tunLogPtr,"%62s",line);
-								fprintf(tunLogPtr,"%62s",savelinesize);
-								fprintf(tunLogPtr,"%s %s: you could install more memory in the system if you wish...\n", ctime_buf, phase2str(current_phase));
-							}
-							found = 1;
-
-					}
-					break;
-
-			default:
-				break;
-			}
-	}
-	
-	free(line);
-return;
-}
-
 #define bbr 		0
 #define fq		1
 #define htcp	 	2
@@ -480,9 +363,6 @@ void fDoSystemTuning(void)
 	host_tuning_vals_t  aTuningNumsToUse[TUNING_NUMS_100G]; 
 	int TUNING_NUMS;
 	int congestion_control_recommended_avail = 0;
-#if 0
-	char devMTUdata[256];
-#endif
 	int x, count, intvalue, found = 0;
 	FILE * tunDefSysCfgPtr = 0;	
 	time_t clk;
@@ -771,14 +651,6 @@ void fDoSystemTuning(void)
 									}
 								}
 						}
-#if 0
-					else //Leaving out this case for now
-						if (strcmp(aTuningNumsToUse[count].setting, "MTU") == 0) //special case - will have to fix up - not using currently
-						{
-							aTuningNumsToUse[count].xDefault = intvalue;
-							fprintf(tunLogPtr,"%*s%26s %20c\n",vPad, value, "-", '-');	
-						}
-#endif				
 				}	
 				else
 					{ //must be a string
@@ -820,7 +692,6 @@ void fDoSystemTuning(void)
 									}
 
 									nread2 = getline(&line2, &len2, modprobeFilePtr);
-//									printf("*******NNNNNNNNnread2 = %ld len = %ld p = %p, strlen of line %ld\n",nread2,len, line2, strlen(line2));
 									fclose(modprobeFilePtr);
 									system("rm -f /tmp/modprobe_result");	
 
@@ -1129,11 +1000,6 @@ void fDoBiosTuning(void)
 	fDoCpuPerformance();
 	fDoIrqBalance();
 
-#if 0
-	/* find additional things that could be tuned */
-	fDo_lshw();
-#endif
-
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"\n%s %s: ***For additional info about your hardware settings and capabilities,\n", ctime_buf, phase2str(current_phase));
 	fprintf(tunLogPtr,"%s %s: ***please run 'sudo dmidecode' and/or 'sudo lshw'. \n", ctime_buf, phase2str(current_phase));
@@ -1392,7 +1258,6 @@ void fDoTxQueueLen()
 
 void fDoRingBufferSize()
 {
-#if 1
         char ctime_buf[27];
         time_t clk;
         char *line = NULL;
@@ -1605,192 +1470,6 @@ dnrb_support:
         system("rm -f /tmp/NIC.cfgfile"); //remove file after use
 
         return;
-#else
-	char ctime_buf[27];
-	time_t clk;
-	char *line = NULL;
-	size_t len = 0;
-	ssize_t nread;
-	struct stat sb;
-	char aNicSetting[512];
-	char sRXMAXValue[256];
-	char sRXCURRValue[256];
-	char sTXMAXValue[256];
-	char sTXCURRValue[256];
-	int rxcount = 0;
-	int txcount = 0;
-	int vPad;
-	FILE *nicCfgFPtr = 0;
-
-	sprintf(aNicSetting,"ethtool --show-ring %s > /tmp/NIC.cfgfile 2>/dev/null",netDevice);
-	system(aNicSetting);
-
-	stat("/tmp/NIC.cfgfile", &sb);
-	if (sb.st_size == 0)
-	{
-		//doesn't support ethtool -a
-		goto dnrb_support;
-	}
-
-	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
-	if (!nicCfgFPtr)
-	{
-		int save_errno = errno;
-		gettime(&clk, ctime_buf);
-		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve speed value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
-	}
-	else
-		{
-			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
-			{ //2nd and 3rd keywords RX and tx ring buffer size
-				int count = 0, ncount = 0;
-
-				if (strstr(line,"RX:") && rxcount == 0)
-				{
-					rxcount++;
-
-					while (!isdigit(line[count])) count++;
-
-					while (isdigit(line[count]))
-					{
-						sRXMAXValue[ncount] = line[count];
-						ncount++;
-						count++;
-					}
-
-					sRXMAXValue[ncount] = 0;
-				}
-				else
-					if (strstr(line,"RX:"))
-					{
-						rxcount++;
-
-						while (!isdigit(line[count])) count++;
-
-						while (isdigit(line[count]))
-						{
-							sRXCURRValue[ncount] = line[count];
-							ncount++;
-							count++;
-						}
-
-						sRXCURRValue[ncount] = 0;
-					}
-					else
-						if (strstr(line,"TX:") && txcount == 0)
-						{
-							txcount++;
-
-							while (!isdigit(line[count])) count++;
-
-							while (isdigit(line[count]))
-							{
-								sTXMAXValue[ncount] = line[count];
-								ncount++;
-								count++;
-							}
-
-							sTXMAXValue[ncount] = 0;
-						}
-						else
-							if (strstr(line,"TX:"))
-							{
-								//should be the last thing I need
-								int cfg_max_val = 0;
-								int cfg_cur_val = 0;
-
-								txcount++;
-
-								while (!isdigit(line[count])) count++;
-
-								while (isdigit(line[count]))
-								{
-									sTXCURRValue[ncount] = line[count];
-									ncount++;
-									count++;
-								}
-
-								sTXCURRValue[ncount] = 0;
-
-								cfg_max_val = atoi(sRXMAXValue);
-								cfg_cur_val = atoi(sRXCURRValue);
-
-								vPad = SETTINGS_PAD_MAX-(strlen("ring_buffer_RX"));
-								fprintf(tunLogPtr,"%s", "ring_buffer_RX"); //redundancy for visual
-								fprintf(tunLogPtr,"%*s", vPad, sRXCURRValue);
-
-								if (cfg_max_val > cfg_cur_val)
-								{
-									fprintf(tunLogPtr,"%26d %20c\n", cfg_max_val, gApplyNicTuning);
-									if (gApplyNicTuning == 'y')
-									{
-										//Apply Initial DefSys Tuning
-										sprintf(aNicSetting,"ethtool -G %s rx %d", netDevice, cfg_max_val);
-										system(aNicSetting);
-									}
-									else
-										{
-											//Save in Case Operator want to apply from menu
-											sprintf(aNicSetting,"ethtool -G %s rx %d", netDevice, cfg_max_val);
-											memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
-											aApplyNicDefTunCount++;
-										}
-								}
-								else
-									fprintf(tunLogPtr,"%26d %20s\n", cfg_max_val, "na");
-
-								cfg_max_val = atoi(sTXMAXValue);
-								cfg_cur_val = atoi(sTXCURRValue);
-
-								vPad = SETTINGS_PAD_MAX-(strlen("ring_buffer_TX"));
-								fprintf(tunLogPtr,"%s", "ring_buffer_TX"); //redundancy for visual
-								fprintf(tunLogPtr,"%*s", vPad, sTXCURRValue);
-
-								if (cfg_max_val > cfg_cur_val)
-								{
-									fprintf(tunLogPtr,"%26d %20c\n", cfg_max_val, gApplyNicTuning);
-									if (gApplyNicTuning == 'y')
-									{
-										//Apply Initial DefSys Tuning
-										sprintf(aNicSetting,"ethtool -G %s tx %d", netDevice, cfg_max_val);
-										system(aNicSetting);
-									}
-									else
-										{
-											//Save in Case Operator want to apply from menu
-											sprintf(aNicSetting,"ethtool -G %s tx %d", netDevice, cfg_max_val);
-											memcpy(aApplyNicDefTun2DArray[aApplyNicDefTunCount], aNicSetting, strlen(aNicSetting));
-											aApplyNicDefTunCount++;
-										}
-								}
-								else
-									fprintf(tunLogPtr,"%26d %20s\n", cfg_max_val, "na");
-
-								//should be the last thing I need
-								break;
-							}
-							else
-								continue;
-			}
-			
-			fclose(nicCfgFPtr);
-			system("rm -f /tmp/NIC.cfgfile"); //remove file after use
-		}
-	
-	if (line)
-		free(line);
-
-	return;
-
-dnrb_support:
-	vPad = SETTINGS_PAD_MAX-(strlen("ring_buffer_rx_tx"));
-	fprintf(tunLogPtr,"%s", "ring_buffer_rx_tx"); //redundancy for visual
-	fprintf(tunLogPtr,"%*s", vPad, "not supported");
-	fprintf(tunLogPtr,"%26s %20s\n", "not supported", "na");
-	system("rm -f /tmp/NIC.cfgfile"); //remove file after use
-
-	return;
-#endif
 }
 
 void fDoLRO() 
@@ -2320,8 +1999,6 @@ int user_assess(int argc, char **argv)
 	fDoBiosTuning();
 
 	fDoNicTuning();
-
-	//fDoBiosTuning();
 
 	gettime(&clk, ctime_buf);
 	current_phase = LEARNING;
