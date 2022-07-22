@@ -30,7 +30,6 @@ void fDoGetDeviceCap(void);
 void fDoBiosTuning(void);
 void fDoNicTuning(void);
 void fDoSystemtuning(void);
-void fDo_lshw(void);
 int fCheckForNicsAndSpeeds();
 
 static int netDeviceSpeed = 0;
@@ -467,121 +466,6 @@ void fDoGetUserCfgValues(void)
 	gettime(&clk, ctime_buf);
 	free(line); //must free
 	return;
-}
-
-void fDo_lshw(void)
-{
-	char *line = NULL;
-	size_t len = 0;
-	ssize_t nread;
-	char *p = 0;
-	int count = 0, found = 0;
-	FILE * lswh_ptr = 0;
-	int state = 0;
-	char savesize[16];
-	char savecap[16];
-	char savelinesize[256];
-	time_t clk;
-	char ctime_buf[27];
-
-	system("sudo lshw > /tmp/lswh_output 2>&1");
-
-	lswh_ptr = fopen("/tmp/lswh_output","r");
-	gettime(&clk, ctime_buf);
-	if (!lswh_ptr)
-	{
-		fprintf(tunLogPtr,"%s %s: Could not open lswh file to check more comparisons.\n", ctime_buf, phase2str(current_phase));
-		return;
-	}
-
-	while (((nread = getline(&line, &len, lswh_ptr)) != -1) && !found) 
-	{
-		switch (state) {
-			case 0:
-	    			if (strstr(line,"*-memory\n"))
-	    			{
-					gettime(&clk, ctime_buf);
-    					fprintf(tunLogPtr,"\n%s %s: The utility 'lshw' reports for memory:\n", ctime_buf, phase2str(current_phase));
-					count++;
-					state = 1;
-				}
-				break;
-
-			case 1:
-				if ((p = strstr(line,"size: ")))
-				{
-					state = 2;
-					p = p + 6; //sizeof "size: "	
-					if (isdigit((int)*p))
-					{
-						int y = 0;
-						memset(savesize,0,sizeof(savesize));
-						while (isdigit((int)*p))
-						{
-							savesize[y] = *p;
-							p++;
-						}
-						strncpy(savelinesize,line, sizeof(savelinesize));
-					}
-					else
-						{
-							gettime(&clk, ctime_buf);
-    							fprintf(tunLogPtr,"%s %s: memory size in lshw is not numerical***\n", ctime_buf, phase2str(current_phase));
-							free(line);
-							return; // has to be a digit
-						}
-				}
-				break;
-
-			case 2:
-				if ((p = strstr(line,"capacity: ")))
-				{
-					state = 3;
-					p = p + 10; //sizeof "capacity: "	
-					if (isdigit((int)*p))
-					{
-						int y = 0;
-						memset(savecap,0,sizeof(savecap));
-						while (isdigit((int)*p))
-						{
-							savecap[y] = *p;
-							p++;
-						}
-					}
-					else
-						{
-							gettime(&clk, ctime_buf);
-    							fprintf(tunLogPtr,"%s %s: memory size in lshw is not numerical***\n", ctime_buf, phase2str(current_phase));
-							free(line);
-							return; // has to be a digit
-						}
-									
-						gettime(&clk, ctime_buf);
-
-						if (strcmp(savecap,savesize) == 0)
-						{
-							fprintf(tunLogPtr,"%s %s: maximum memory installed in system\n", ctime_buf, phase2str(current_phase));
-							fprintf(tunLogPtr,"%62s",line);
-							fprintf(tunLogPtr,"%62s",savelinesize);
-						}
-						else
-							{
-								fprintf(tunLogPtr,"%62s",line);
-								fprintf(tunLogPtr,"%62s",savelinesize);
-								fprintf(tunLogPtr,"%s %s: you could install more memory in the system if you wish...\n", ctime_buf, phase2str(current_phase));
-							}
-							found = 1;
-
-					}
-					break;
-
-			default:
-				break;
-			}
-	}
-	
-	free(line);
-return;
 }
 
 #define bbr 		0
@@ -1363,11 +1247,6 @@ void fDoBiosTuning(void)
 
 	fDoCpuPerformance();
 	fDoIrqBalance();
-
-#if 0
-	/* find additional things that could be tuned */
-	fDo_lshw();
-#endif
 
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"\n%s %s: ***For additional info about your hardware settings and capabilities,\n", ctime_buf, phase2str(current_phase));
@@ -2402,7 +2281,6 @@ void fDoNicTuning(void)
 #endif
 	fDoMTU();
 	fDoTcQdiscFq();
-	//fDoIrqBalance();
 #if 0
 	fDoFlowControl();
 #endif
@@ -2512,8 +2390,6 @@ int main(int argc, char **argv)
 
 	if (argc == 2)
 		fDoNicTuning();
-
-	//fDoBiosTuning();
 
 	gettime(&clk, ctime_buf);
 	current_phase = LEARNING;
