@@ -1396,7 +1396,6 @@ int fDoGetNuma(void)
 static int rec_txqueuelen_Equal100G = 20000; //recommended value for now if equal 100G
 static int rec_txqueuelen = 1000; //recommended value for now if 10G or less
 static int rec_mtu = 9200; //recommended value for now
-static char * rec_tcqdisc = "fq"; //recommended value for now
 void fDoTxQueueLen()
 {
 
@@ -2002,6 +2001,8 @@ void fDoMTU()
 	return;
 }
 
+#if 0
+static char * rec_tcqdisc = "fq"; //recommended value for now
 void fDoTcQdiscFq()
 {
 	char ctime_buf[27];
@@ -2093,6 +2094,7 @@ void fDoTcQdiscFq()
 		}
 	return;
 }
+#endif
 
 void fDoFlowControl()
 {
@@ -2281,7 +2283,11 @@ void fDoNicTuning(void)
 		fDoLRO();//large receive offload
 #endif
 	fDoMTU();
+#if 0
+	//Already done by setting "net.core.default_qdisc" to fq???
 	fDoTcQdiscFq();
+#endif
+
 #if 0
 	fDoFlowControl();
 #endif
