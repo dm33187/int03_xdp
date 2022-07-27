@@ -2277,7 +2277,8 @@ void fDoNicTuning(void)
 	fDoTxQueueLen();
 	fDoRingBufferSize();
 #if 1
-	fDoLRO();//large receive offload
+	if (netDeviceSpeed >= 100000)
+		fDoLRO();//large receive offload
 #endif
 	fDoMTU();
 	fDoTcQdiscFq();
