@@ -10,6 +10,22 @@ enum workflow_phases {
         LEARNING,
         TUNING,
 };
+
+#define TUNING_NUMS_10GandUnder 9
+#define TUNING_NUMS_Over10GtoUnder100G  9
+#define TUNING_NUMS_100G        11
+#define MAX_SIZE_SYSTEM_SETTING_STRING  768
+typedef struct {
+        char * setting;
+        unsigned int  minimum;
+        int xDefault; //if default is -1, then default and max are nops
+        unsigned int maximum;
+}host_tuning_vals_t;
+
+extern host_tuning_vals_t aTuningNumsToUse10GandUnder[TUNING_NUMS_10GandUnder];
+extern host_tuning_vals_t aTuningNumsToUse_Over10GtoUnder100G[TUNING_NUMS_Over10GtoUnder100G];
+extern host_tuning_vals_t aTuningNumsToUse100Gb[TUNING_NUMS_100G];
+
 extern const char *phase2str(enum workflow_phases phase);
 extern FILE * tunLogPtr;
 extern enum workflow_phases current_phase;
@@ -18,6 +34,7 @@ extern int gAPI_listen_port;
 extern int gSource_Dtn_Port;
 extern char gTuningMode;
 extern char netDevice[];
+extern int netDeviceSpeed;
 
 
 

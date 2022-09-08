@@ -4,7 +4,9 @@
 static void on_response(http_s *h);
 
 static char * Usage = "This is an HTTP client to talk to Tuning Module. \
-		       \nUse \"tuncli -t\" to apply tunings that were recommended. \
+		       \nUse \"tuncli -t\" to apply tunings that were recommended during assessment phase. \
+		       \nUse \"tuncli -l on\" to turn learning mode on (default). \
+		       \nUse \"tuncli -l off\" to turn learning mode off. \
 		       \nUse \"tuncli -pc\" to provide counters of activities performed per flow. \
 		       \nUse \"tuncli -b rx [value]\" to change RX ring buffer size of the NIC. \
 		       \nUse \"tuncli -b tx [value]\" to change TX ring buffer size of the NIC. \
@@ -50,13 +52,26 @@ int main(int argc, const char *argv[])
 			goto carry_on;
 		}
 		else
-			if ((strcmp(argv[1],"-d") == 0) && argc == 3)
+			if (argc == 3)
 			{
-				if ((strcmp(argv[2],"0") == 0) || (strcmp(argv[2],"1") == 0) || (strcmp(argv[2],"2") == 0) || (strcmp(argv[2],"3") == 0) || (strcmp(argv[2],"4") == 0))
+				if (strcmp(argv[1],"-d") == 0)
 				{
-					sprintf(aSecondPart,"%s#%s",argv[1], argv[2]);
-					goto carry_on;
+					if (isdigit(*argv[2]))
+			//		if ((strcmp(argv[2],"0") == 0) || (strcmp(argv[2],"1") == 0) || (strcmp(argv[2],"2") == 0) || (strcmp(argv[2],"3") == 0) || (strcmp(argv[2],"4") == 0))
+					{
+						sprintf(aSecondPart,"%s#%s",argv[1], argv[2]);
+						goto carry_on;
+					}
 				}
+				else
+					if (strcmp(argv[1],"-l") == 0)
+					{
+						if ((strcmp(argv[2],"on") == 0) || (strcmp(argv[2],"off") == 0))
+						{
+							sprintf(aSecondPart,"%s#%s",argv[1], argv[2]);
+							goto carry_on;
+						}
+					}
 				/* fall thru */
 			}
 	
