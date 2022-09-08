@@ -64,7 +64,7 @@ typedef struct {
 	char cfg_value[32];
 } sUserValues_t[NUMUSERVALUES];
 
-sUserValues_t userValues = {{"evaluation_timer", "2000", "-1"},
+sUserValues_t userValues = {{"evaluation_timer", "500000", "-1"},
 			{"learning_mode_only","y","-1"},
 			{"API_listen_port","5523","-1"},
 			{"apply_default_system_tuning","n","-1"},
@@ -282,13 +282,6 @@ void fDoGetUserCfgValues(void)
 #define getvalue	5
 char *aStringval[] ={"bbr", "fq", "htcp", "reno", "cubic", "getvalue"};
 
-typedef struct {
-	char * setting;
-	uint32_t  minimum;
-	int xDefault; //if default is -1, then default and max are nops
-	uint32_t maximum;
-}host_tuning_vals_t;
-
 /* 
  * Suggestion for net.ipv4.tcp_mem...
  *
@@ -299,7 +292,6 @@ typedef struct {
  * A minimum value of "getvalue" means that I'm just intereste in the value.
  */
 #define NUM_SYSTEM_SETTINGS	100
-#define MAX_SIZE_SYSTEM_SETTING_STRING	768
 int aApplyKernelDefTunCount = 0;
 int aApplyNicDefTunCount = 0;
 int aApplyBiosDefTunCount = 0;
@@ -308,8 +300,9 @@ char aApplyKernelDefTun2DArray[NUM_SYSTEM_SETTINGS][MAX_SIZE_SYSTEM_SETTING_STRI
 char aApplyNicDefTun2DArray[NUM_SYSTEM_SETTINGS][MAX_SIZE_SYSTEM_SETTING_STRING];
 char aApplyBiosDefTun2DArray[NUM_SYSTEM_SETTINGS][MAX_SIZE_SYSTEM_SETTING_STRING];
 
-#define TUNING_NUMS_10GandUnder	9
-/* Must change TUNING_NUMS_10GandUnder if adding more to the array below */
+int my_tune_max = 0;
+
+/* Must change TUNING_NUMS_10GandUnder if adding more to the array below in user_dtn.h*/
 host_tuning_vals_t aTuningNumsToUse10GandUnder[TUNING_NUMS_10GandUnder] = {
 	{"net.core.rmem_max",				67108864,          -1,      	0},
 	{"net.core.wmem_max",				67108864,          -1,      	0},
@@ -322,7 +315,6 @@ host_tuning_vals_t aTuningNumsToUse10GandUnder[TUNING_NUMS_10GandUnder] = {
 	{"MTU",						       0, 	   84, 		0} //Will leave here but not using for now
 };
 
-#define TUNING_NUMS_Over10GtoUnder100G	9
 /* Must change TUNING_NUMS_Over10GtoUnder100G if adding more to the array below */
 host_tuning_vals_t aTuningNumsToUse_Over10GtoUnder100G[TUNING_NUMS_Over10GtoUnder100G] = {
 	{"net.core.rmem_max",				134217728,         -1,      	0},
@@ -336,7 +328,6 @@ host_tuning_vals_t aTuningNumsToUse_Over10GtoUnder100G[TUNING_NUMS_Over10GtoUnde
 	{"MTU",						       0, 	   84, 		0} //Will leave here but not using for now
 };
 
-#define TUNING_NUMS_100G	11
 /* Must change TUNING_NUMS_100G if adding more to the array below */
 host_tuning_vals_t aTuningNumsToUse100Gb[TUNING_NUMS_100G] = {
 	{"net.core.rmem_max",				2147483647,          -1,      		0},
@@ -351,6 +342,7 @@ host_tuning_vals_t aTuningNumsToUse100Gb[TUNING_NUMS_100G] = {
 	{"net.ipv4.tcp_no_metrics_save",			 1,	     -1,		0},
 	{"MTU",							 0,	     84, 		0} //leave here not use for now
 };
+
 void fDoSystemTuning(void)
 {
 
@@ -549,6 +541,10 @@ void fDoSystemTuning(void)
 									y = sprintf(strValdef,"%d",aTuningNumsToUse[count].xDefault);
 									total += y;
 									y = sprintf(strValmax,"%d",aTuningNumsToUse[count].maximum);
+
+									if (strcmp("net.ipv4.tcp_wmem",setting) == 0)
+										my_tune_max = atoi(strValmax);
+
 									total += y;
 									vPad = SETTINGS_PAD_MAX3-total;
 									if (aTuningNumsToUse[count].maximum > currmax)
@@ -909,7 +905,7 @@ void fDoIrqBalance()
 	{
 		int save_errno = errno;
 		gettime(&clk, ctime_buf);
-		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/BIOS.cfgfile to work out CPU speed, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/BIOS.cfgfile to see irqbalance, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
 	}
 	else
 		{
