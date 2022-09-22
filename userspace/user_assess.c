@@ -23,7 +23,8 @@ void fDoBiosTuning(void);
 void fDoNicTuning(void);
 void fDoSystemtuning(void);
 
-int gInterval = 2000; //default
+int gInterval = 500000; //default
+int vUseEvalutaionTimerDefaultValue = 0;
 int gAPI_listen_port = 5523; //default listening port
 int gSource_Dtn_Port = 5524; //default listening port
 int netDeviceSpeed = 0;
@@ -206,8 +207,14 @@ void fDoGetUserCfgValues(void)
 			int cfg_val = atoi(userValues[count].cfg_value);
 			if (cfg_val == 0) //wasn't set properly - error
 				gInterval = atoi(userValues[count].default_val);
-			else
-				gInterval = cfg_val;
+			else 
+			{
+				//gInterval can't be less than 1000 microseconds
+				if (cfg_val > 999)
+					gInterval = cfg_val;
+				else //use gInterval default - currently 500000 microsecs
+					vUseEvalutaionTimerDefaultValue = 1;
+			}
 		}
 		else
 			if (strcmp(userValues[count].aUserValues,"learning_mode_only") == 0)
@@ -269,7 +276,14 @@ void fDoGetUserCfgValues(void)
 	}
 
 	gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"\n%s ***Using 'evaluation_timer' with value %d microseconds***\n", ctime_buf, gInterval);
+	if (!vUseEvalutaionTimerDefaultValue)
+		fprintf(tunLogPtr,"\n%s %s: ***Using 'evaluation_timer' with value %d microseconds***\n", ctime_buf, phase2str(current_phase), gInterval);
+	else
+		{
+			fprintf(tunLogPtr,"\n%s %s: ***'evaluation_timer' cannot be set to a value less than 1000 microseconds***\n", ctime_buf, phase2str(current_phase));
+			fprintf(tunLogPtr,"%s %s: ***Using 'evaluation_timer' with the default value of %d microseconds***\n", ctime_buf, phase2str(current_phase), gInterval);
+		}
+
 	free(line); //must free
 	return;
 }

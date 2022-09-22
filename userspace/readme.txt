@@ -28,7 +28,7 @@ that can be used.  The following is an explanation for each one:
 a. evaluation timer  
 The evaluation time parameter is the time that the tuning module will wait 
 before reevalualting new metadata from the Collector  Module. It is measured 
-in microseconds and has a default value of 50000. (50 ms) 
+in microseconds and has a default value of 500000. (500 ms) 
  
 b. learning_mode_only 
 The learning_mode_only parameter is used to tell the Tuning Module if it should 

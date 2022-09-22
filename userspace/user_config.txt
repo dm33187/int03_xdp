@@ -1,4 +1,4 @@
-evaluation_timer		50000
+evaluation_timer		500000
 learning_mode_only		y
 API_listen_port			5523
 apply_bios_tuning		n
