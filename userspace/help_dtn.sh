@@ -2,7 +2,7 @@
 # Author: Italo Valcy
 # Modified: David Miranda
 
-INTERVAL="1"  # update interval in seconds
+INTERVAL="0.010"  # update interval in seconds
 
 if [ -z "$1" ]; then
 	echo
