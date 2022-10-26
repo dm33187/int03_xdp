@@ -22,6 +22,58 @@
 #include "unp.h"
 #include "user_dtn.h"
 
+FILE * tunLogPtr = 0;
+FILE * csvLogPtr = 0;
+
+void gettime(time_t *clk, char *ctime_buf)
+{
+	*clk = time(NULL);
+	ctime_r(clk,ctime_buf);
+	ctime_buf[24] = ':';
+}
+
+void open_csv_file(void);
+void open_csv_file(void)
+{
+	time_t clk;
+	char ctime_buf[27];
+
+	csvLogPtr = fopen("/tmp/csvTuningLog","w");
+	if (!csvLogPtr)
+	{
+		printf("Could not open CSV Logfile, exiting...\n");
+		exit(-1);
+	}
+
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr, "%s %s: CSV Log file /tmp/csvTuningLog also opened***\n", ctime_buf, phase2str(current_phase));
+
+	fprintf(csvLogPtr,"delta,name,value\n");
+	fflush(csvLogPtr);
+
+	return;
+}
+
+static time_t now_time = 0;
+static time_t last_time = 0;
+time_t calculate_delta_for_csv(void);
+time_t calculate_delta_for_csv(void)
+{
+	time_t vTime;
+
+	if (now_time == 0) //first time thru
+	{
+		now_time = time(&vTime);
+		return 0;
+	}
+	else
+	{
+		last_time = now_time;
+		now_time = time(&vTime);
+		return (now_time - last_time);
+	}
+}
+
 pthread_mutex_t dtn_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t dtn_cond = PTHREAD_COND_INITIALIZER;
 static int cdone = 0;
@@ -38,14 +90,6 @@ static union uIP src_ip_addr;
 
 void qOCC_Hop_TimerID_Handler(int signum, siginfo_t *info, void *ptr);
 static void timerHandler( int sig, siginfo_t *si, void *uc );
-
-FILE * tunLogPtr = 0;
-void gettime(time_t *clk, char *ctime_buf)
-{
-	*clk = time(NULL);
-	ctime_r(clk,ctime_buf);
-	ctime_buf[24] = ':';
-}
 
 timer_t qOCC_Hop_TimerID;
 timer_t rTT_TimerID;
@@ -168,6 +212,9 @@ void sig_int_handler(int signum, siginfo_t *info, void *ptr)
 	write(STDERR_FILENO, SIGINT_MSG, sizeof(SIGINT_MSG));
 	fprintf(tunLogPtr,"Caught SIGINT, exiting...\n");
 	fclose(tunLogPtr);
+
+	if (csvLogPtr)
+		fclose(csvLogPtr);
 	exit(0);
 }
 
@@ -1015,6 +1062,7 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 	unsigned int  kminimum;
 	int kdefault;
 	unsigned int kmaximum;
+	static time_t delta = 0;
 
 	gettime(&clk, ctime_buf);
 	if (average_tx_Gbits_per_sec < vGoodBitrateValue)
@@ -1078,14 +1126,23 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 							//char aApplyDefTun[MAX_SIZE_SYSTEM_SETTING_STRING];
 							char aApplyDefTunNoStdOut[MAX_SIZE_SYSTEM_SETTING_STRING+32];
 							char activity[MAX_SIZE_TUNING_STRING];
+							char aName[100];
+							char aValue[128];
 
+							sprintf(aName,"net.ipv4.tcp_wmem");
 							if (*tune == 1) //apply up
+							{
 								sprintf(aApplyDefTun,"sysctl -w net.ipv4.tcp_wmem=\"%u %d %u\"", kminimum, kdefault, kmaximum+KTUNING_DELTA);
+								sprintf(aValue, "%u %d %u", kminimum, kdefault, kmaximum+KTUNING_DELTA);
+							}
 							else
 								if (*tune == 2)
 								{
 									if (kmaximum > 600000)
+									{
 										sprintf(aApplyDefTun,"sysctl -w net.ipv4.tcp_wmem=\"%u %d %u\"", kminimum, kdefault, kmaximum - KTUNING_DELTA);
+										sprintf(aValue, "%u %d %u", kminimum, kdefault, kmaximum-KTUNING_DELTA);
+									}
 									else
 										{
 								
@@ -1112,6 +1169,11 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 							strcpy(aApplyDefTunNoStdOut,aApplyDefTun);
 							strcat(aApplyDefTunNoStdOut," >/dev/null"); //so it won't print to stderr on console
 							system(aApplyDefTunNoStdOut);
+
+							delta = delta + calculate_delta_for_csv();
+							fprintf(csvLogPtr,"%lu,%s,%s\n",delta,aName,aValue);
+							fflush(csvLogPtr);
+
 							fprintf(tunLogPtr, "%s %s: ***APPLIED TUNING***: %s\n\n",ctime_buf, phase2str(current_phase), aApplyDefTun);
 
 							sprintf(activity,"%s %s: ***ACTIVITY=APPLIED=TUNING***: %s\n",ctime_buf, phase2str(current_phase), aApplyDefTun);
@@ -2376,7 +2438,9 @@ int main(int argc, char **argv)
 			fprintf(tunLogPtr, "%s %s: Device name not supplied, exiting***\n", ctime_buf, phase2str(current_phase));
 			exit(-3);
 		}
-		
+
+	open_csv_file();	
+
 	user_assess(argc, argv);
 	fCheck_log_limit();
 	
