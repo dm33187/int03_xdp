@@ -8,12 +8,13 @@ Note: This package requires 'lshw' and 'dmidecode' utilities tools
       to be installed on the system
 
 Additional Notes:
-There are 5 files that are used in conjunction with the Tuning Module: 
+There are 6 files that are used in conjunction with the Tuning Module: 
 i.    readme.txt
 ii.   user_config.txt 
 iii.  gdv.sh 
 iv.   gdv_100.sh
 v.    /tmp/tuningLog 
+vi.   /tmp/csvTuningLog
 
 readme.txt
 ==========
@@ -150,6 +151,11 @@ values.  The recommended values are 4096 65536 33554432.
 The tuningLog file contains the output of all the logging that the 
 Tuning Module does. 
 
+/tmp/csvTuningLog
+=================
+The csvTuningLog file contains a list of comma separated values which
+shows any tuning that was applied. This file can be later used to
+create JSON formatted data.
 
 ==============================================
 ==============================================
