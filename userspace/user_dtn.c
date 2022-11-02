@@ -460,7 +460,8 @@ void record_activity(char *pActivity)
 	strcat(pActivity,add_to_activity);
 	//sprintf(activity,"%s %s: ***hop_key.hop_index %X, Doing Something***vFlowcount = %d, num_tuning_activty = %d, myCount = %u", ctime_buf, phase2str(current_phase), curr_hop_key_hop_index, vFlowCount, sFlowCounters[vFlowCount].num_tuning_activities + 1, myCount++);
 
-	fprintf(tunLogPtr,"%s\n",pActivity); //special case for testing
+	if (vDebugLevel > 4)
+		fprintf(tunLogPtr,"%s\n",pActivity); //special case for testing - making sure activity is recorded to use with tuncli
 
 	strcpy(sFlowCounters[vFlowCount].what_was_done[sFlowCounters[vFlowCount].num_tuning_activities], pActivity);
 	(sFlowCounters[vFlowCount].num_tuning_activities)++;
@@ -1358,8 +1359,31 @@ start:
 		}
 		else
 			{
+#if 0 
+				if ((vDebugLevel > 2) &&  (highest_average_tx_Gbits_per_sec >= 1))
+				{
+					fprintf(tunLogPtr,"%s %s: ***applied = %d, highest avg tx bitrate= %.2f***\n", 
+						ctime_buf, phase2str(current_phase), applied, highest_average_tx_Gbits_per_sec);
+				}
+#endif
 				if (highest_average_tx_Gbits_per_sec <= average_tx_Gbits_per_sec)
+				{
 					highest_average_tx_Gbits_per_sec = average_tx_Gbits_per_sec;
+#if 1
+					if (applied)
+					{
+						strcpy(best_wmem_val,aApplyDefTunBest);
+	
+						if (vDebugLevel > 1)
+						{
+							fprintf(tunLogPtr,"%s %s: ***Best wmem val***%s***\n\n", ctime_buf, 
+										phase2str(current_phase), best_wmem_val);
+						}
+
+						max_apply = 0;
+					}
+#endif
+				}
 				
 				if (previous_average_tx_Gbits_per_sec < highest_average_tx_Gbits_per_sec)
 				{
@@ -1404,20 +1428,7 @@ start:
 						goto ck_stage;
 					}
 				}
-
-				if (applied && previous_average_tx_Gbits_per_sec >= highest_average_tx_Gbits_per_sec)
-				{
-					strcpy(best_wmem_val,aApplyDefTunBest);
-
-					if (vDebugLevel > 1)
-					{
-						fprintf(tunLogPtr,"%s %s: ***Best wmem val***%s***\n\n", ctime_buf, 
-									phase2str(current_phase), best_wmem_val);
-					}
-
-					max_apply = 0;
-				}
-
+				
 				if (applied)
 					max_apply++;
 				else
@@ -1427,7 +1438,7 @@ start:
 				{
 					tune = 3;
 					strcpy(aApplyDefTunBest,best_wmem_val);
-#if 0	
+#if 1	
 					if (vDebugLevel > 1)
 					{
 						fprintf(tunLogPtr,"%s %s: ***Going to apply Best wmem val***%s***\n\n", ctime_buf, 
@@ -1484,6 +1495,8 @@ start:
 						}
 					}
 
+			applied = 0;
+
 			if (average_tx_Gbits_per_sec >= 1) //must be at least a Gig to check
 				check_if_bitrate_too_low(average_tx_Gbits_per_sec, &applied, &suggested, &nothing_done, &tune, aApplyDefTunBest);
 
@@ -1495,7 +1508,6 @@ start:
 				
 			average_tx_Gbits_per_sec = 0.0;
 			average_tx_kbits_per_sec = 0.0;
-
 			my_usleep(gInterval); //sleeps in microseconds
 	}
 
@@ -1508,370 +1520,12 @@ ck_stage:
 		goto start;
 	}
 
-	printf("Problems*** stage not set...\n");
-
-return ((char *) 0);
-}
-
-#if 0
-void * fDoRunGetThresholds(void * vargp)
-{
-	//int * fd = (int *) vargp;
-	time_t clk;
-	char ctime_buf[27];
-	
-	gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"%s %s: ***Starting Check Threshold thread ...***\n", ctime_buf, phase2str(current_phase));
+	fprintf(tunLogPtr, "%s %s: ***Problems*** stage not set...\n", ctime_buf, phase2str(current_phase));
 	fflush(tunLogPtr);
-	char buffer[128];
-	char aApplyDefTunBest[MAX_SIZE_SYSTEM_SETTING_STRING];
-	char best_wmem_val[MAX_SIZE_SYSTEM_SETTING_STRING];
-	FILE *pipe;
-	int before = 0;
-	int now = 0;
-#if 1
-	unsigned long keep_tx_bytes_tot = 0;
-	int acount = 0;
-#endif
-	int check_bitrate_interval = 0, keep_bitrate_interval = 0;
-	time_t secs_passed = 1;
-	unsigned long rx_missed_errs_before, rx_missed_errs_now, rx_missed_errs_tot;
-	unsigned long rx_before, rx_now, rx_bytes_tot;
-	unsigned long tx_before, tx_now, tx_bytes_tot;
-	double average_tx_bits_per_sec = 0.0;
-	double average_tx_Gbits_per_sec = 0.0;
-	double highest_average_tx_Gbits_per_sec = 0.0;
-//	double previous_average_tx_Gbits_per_sec = 0.0;
-	char try[1024];
-	int stage = 0;
-	int applied = 0, suggested = 0, nothing_done = 0, max_apply = 0, something_wrong_check = 0;
-	int tune = 1; //1 = up, 2 = down - tune up initially
-
-	rx_missed_errs_before = rx_missed_errs_now = rx_missed_errs_tot = 0;
-	rx_before =  rx_now = rx_bytes_tot = rx_bits_per_sec = 0;
-	tx_before =  tx_now =  tx_bytes_tot = tx_bits_per_sec = 0;
-
-	sprintf(try,"bpftrace -e \'BEGIN { @name;} kprobe:dev_get_stats { $nd = (struct net_device *) arg0; @name = $nd->name; } kretprobe:dev_get_stats /@name == \"%s\"/ { $rtnl = (struct rtnl_link_stats64 *) retval; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; $rx_missed_errors = $rtnl->rx_missed_errors; printf(\"%s %s %s\\n\", $tx_bytes, $rx_bytes, $rx_missed_errors); time(\"%s\"); exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu","%lu","%S");
-	/* fix for kfunc below too */
-	/*sprintf(try,"bpftrace -e \'BEGIN { @name;} kfunc:dev_get_stats { $nd = (struct net_device *) args->dev; @name = $nd->name; } kretfunc:dev_get_stats /@name == \"%s\"/ { $nd = (struct net_device *) args->dev; $rtnl = (struct rtnl_link_stats64 *) args->storage; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); time(\"%s\"); exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu","%S");*/
-
-start:
-	secs_passed = 0;
-#if 1
-	rx_missed_errs_before = rx_missed_errs_now = rx_missed_errs_tot = 0;
-	rx_before =  rx_now = rx_bytes_tot = rx_bits_per_sec = 0;
-	tx_before =  tx_now =  tx_bytes_tot = tx_bits_per_sec = 0;
-	now = before = 0;
-	keep_tx_bytes_tot = 0;
-#endif
-	//before = time((time_t *)0);
-	pipe = popen(try,"r");
-	if (!pipe)
-	{
-		printf("popen failed!\n");
-		return ((char *) 0);
-	}
-	// read for 2 lines of process:
-	while (!feof(pipe))
-	{
-		// use buffer to read and add to result
-		if (fgets(buffer, 128, pipe) != NULL);
-		else
-			{
-				printf("Not working****\n");
-				return ((char *) 0);
-			}
-
- 		if (fgets(buffer, 128, pipe) != NULL)
-		{
-			sscanf(buffer,"%lu %lu %lu", &tx_before, &rx_before, &rx_missed_errs_before);
-			fgets(buffer, 128, pipe);
-			sscanf(buffer,"%d", &before);
-			pclose(pipe);
-
-			//sleep(1);
-			pipe = popen(try,"r");
-			if (!pipe)
-			{
-				printf("popen failed!\n");
-				return ((char *) 0);
-			}
-			//now = time((time_t *)0);
-			stage = 1;
-			break;
-		}
-		else
-			{
-				printf("Not working****\n");
-				return ((char *) 0);
-			}
-	}
-
-	while (!feof(pipe) && stage)
-	{
-		// use buffer to read and add to result
-		if (fgets(buffer, 128, pipe) != NULL);
-		else
-			{
-				printf("Not working****\n");
-				return ((char *) 0);
-			}
-		if (fgets(buffer, 128, pipe) != NULL)
-		{
-			sscanf(buffer,"%lu %lu %lu", &tx_now, &rx_now, &rx_missed_errs_now);
-			fgets(buffer, 128, pipe);
-			sscanf(buffer,"%d", &now);
-
-			tx_bytes_tot =  tx_now - tx_before;
-			rx_bytes_tot =  rx_now - rx_before;
-			rx_missed_errs_tot = rx_missed_errs_now - rx_missed_errs_before; 
-
-			if (now < before) //seconds started over
-			{
-				secs_passed = (60 - before) + now;
-			}
-			else
-				secs_passed = now - before;
-#if 1
-			keep_tx_bytes_tot = tx_bytes_tot;
-#endif
-			
-			if (secs_passed > 1)
-			{
-				//bpftrace and the figures don't line up with the iperf, but lets make it higher than lower
-				//we see this by observation
-				tx_bytes_tot = tx_bytes_tot + (tx_bytes_tot / secs_passed );
-			}
-
-			if (!secs_passed) 
-			{
-				secs_passed = 1;
-				acount = 1;
-				tx_bytes_tot = tx_bytes_tot + (tx_bytes_tot / 2 );
-			}
-			
-			if (vDebugLevel > 1)
-			{
-				fprintf(tunLogPtr,"%s %s: ***secs_passed*** = %ld, acount = %d, keep_bytes_tot  = %ld, bytes_before  %ld, bytes_now %ld, bytes_total = %ld\n",ctime_buf, phase2str(current_phase), secs_passed, acount, keep_tx_bytes_tot, tx_before, tx_now, tx_bytes_tot);
-			}
-
-			acount = 0;
-
-			//tx_bits_per_sec = ((8 * tx_bytes_tot) / 1024) / secs_passed;
-			//rx_bits_per_sec = ((8 * rx_bytes_tot) / 1024) / secs_passed;;
-			tx_bits_per_sec = ((8 * tx_bytes_tot) / 1000) / secs_passed;
-			rx_bits_per_sec = ((8 * rx_bytes_tot) / 1000) / secs_passed;;
-			pclose(pipe);
-		
-			average_tx_bits_per_sec += tx_bits_per_sec;	
-			//check_bitrate_interval++;
-			check_bitrate_interval += secs_passed;
-			keep_bitrate_interval = check_bitrate_interval;
-			if (check_bitrate_interval >= BITRATE_INTERVAL) 
-			{
-				//check_bitrate_interval = 0;
-				//average_tx_bits_per_sec = average_tx_bits_per_sec/BITRATE_INTERVAL;
-				average_tx_bits_per_sec = average_tx_bits_per_sec/(double)check_bitrate_interval;
-				average_tx_Gbits_per_sec = average_tx_bits_per_sec/(double)(1000000);
-				//average_tx_Gbits_per_sec = average_tx_bits_per_sec/(double)(1048576);
-				check_bitrate_interval = 0;
-			}
-
-			gettime(&clk, ctime_buf);
-			
-			if (vDebugLevel > 5 && tx_bits_per_sec)
-			{
-				fprintf(tunLogPtr,"%s %s: DEV %s: TX : %.2f Gb/s RX : %.2f Gb/s, RX_MISD_ERRS/s : %lu, secs_passed %lu\n", 
-						ctime_buf, phase2str(current_phase), netDevice, tx_bits_per_sec/(double)(1000000), rx_bits_per_sec/(double)(1000000), rx_missed_errs_tot/secs_passed, secs_passed);
-				//		ctime_buf, phase2str(current_phase), netDevice, tx_bits_per_sec/(double)(1048576), rx_bits_per_sec/(double)(1048576), rx_missed_errs_tot/secs_passed, secs_passed);
-			}
-
-			if (vDebugLevel > 1 && average_tx_Gbits_per_sec)
-			{
-				if (!check_bitrate_interval)
-				{
-					fprintf(tunLogPtr,"%s %s: average_tx_Gbits_per_sec = %.2f Gb/s, bitrate_interval = %d \n",ctime_buf, phase2str(current_phase), average_tx_Gbits_per_sec, keep_bitrate_interval);
-				}
-			}
-
-			if (!check_bitrate_interval)
-			{
-				if (tune == 3 && average_tx_Gbits_per_sec)
-				{
-					tune = 0;
-					applied = 0;
-					nothing_done = 1;
-				}
-				else
-					{
-						if (highest_average_tx_Gbits_per_sec <= average_tx_Gbits_per_sec)
-							highest_average_tx_Gbits_per_sec = average_tx_Gbits_per_sec;
-						
-						if (previous_average_tx_Gbits_per_sec < highest_average_tx_Gbits_per_sec)
-						{
-							tune = 1; //up
-						}
-						else
-							tune = 2; //down
-
-						gettime(&clk, ctime_buf);
-						if (previous_average_tx_Gbits_per_sec)
-						{
-							if ((vDebugLevel > 2) &&  (highest_average_tx_Gbits_per_sec >= 1))
-							{
-								fprintf(tunLogPtr,"%s %s: ***applied = %d, previous avg bitrate %.2f, highest avg bitrate= %.2f***\n", 
-										ctime_buf, phase2str(current_phase), applied, 
-											previous_average_tx_Gbits_per_sec, highest_average_tx_Gbits_per_sec);
-							}
-
-							if (previous_average_tx_Gbits_per_sec*2 < highest_average_tx_Gbits_per_sec)
-								something_wrong_check++;
-							else
-								something_wrong_check = 0;
-
-							if (something_wrong_check > 2)
-							{
-								if ((vDebugLevel > 1) &&  (highest_average_tx_Gbits_per_sec >= 1))
-								{
-									fprintf(tunLogPtr,"%s %s: previous value %.2f, is way too smaller than highest = %.2f***\n",
-										ctime_buf, phase2str(current_phase), previous_average_tx_Gbits_per_sec, 
-											highest_average_tx_Gbits_per_sec);
-
-									fprintf(tunLogPtr,"%s %s: Will need to adjust***\n", ctime_buf, phase2str(current_phase));
-								}
-
-								highest_average_tx_Gbits_per_sec = previous_average_tx_Gbits_per_sec/2;
-								something_wrong_check = 0;
-								tune = 0;
-								nothing_done = 0;
-								max_apply = 0;
-								average_tx_Gbits_per_sec = 0.0;
-								average_tx_bits_per_sec = 0.0;
-								break;
-							}
-						}
-
-						if (applied && previous_average_tx_Gbits_per_sec >= highest_average_tx_Gbits_per_sec)
-						{
-							strcpy(best_wmem_val,aApplyDefTunBest);
-
-							if (vDebugLevel > 1)
-							{
-								fprintf(tunLogPtr,"%s %s: ***Best wmem val***%s***\n\n", ctime_buf, 
-											phase2str(current_phase), best_wmem_val);
-							}
-
-							max_apply = 0;
-						}
-
-						if (applied)
-							max_apply++;
-						else
-							max_apply = 0;
-
-						if (max_apply >= MAX_TUNING_APPLY)
-						{
-							tune = 3;
-							strcpy(aApplyDefTunBest,best_wmem_val);
-#if 0	
-							if (vDebugLevel > 1)
-							{
-								fprintf(tunLogPtr,"%s %s: ***Going to apply Best wmem val***%s***\n\n", ctime_buf, 
-											phase2str(current_phase), best_wmem_val);
-							}
-#endif
-							max_apply = 0;
-						}
-
-						fflush(tunLogPtr);
-
-						previous_average_tx_Gbits_per_sec = average_tx_Gbits_per_sec;
-					}
-
-				if (suggested)
-				{
-					if (suggested++ > 3)
-						suggested = 0;
-					else
-						{
-							if ((suggested == 2) && (vDebugLevel > 0))
-							{
-								gettime(&clk, ctime_buf);
-								fprintf(tunLogPtr,
-									"%s %s: ***Tuning was suggested but not applied, will skip suggesting for now ...***\n", 
-										ctime_buf, phase2str(current_phase));
-
-								fflush(tunLogPtr);
-							}
-							average_tx_Gbits_per_sec = 0.0;
-							average_tx_bits_per_sec = 0.0;
-							break;
-						}
-				}
-				else
-					if (applied) //tuning applied
-					{
-						applied = 0;
-					}
-					else
-						if (nothing_done) //no change to tuning
-						{
-							if (nothing_done++ > 6)
-								nothing_done = 0;
-							else
-							{
-								if ((nothing_done == 2) && (vDebugLevel > 0))
-								{
-									gettime(&clk, ctime_buf);
-
-									fprintf(tunLogPtr,
-									"%s %s: ***Tuning appears sufficient, will skip suggesting or applying for now ...***\n", 
-											ctime_buf, phase2str(current_phase));
-
-									fflush(tunLogPtr);
-								}
-								average_tx_Gbits_per_sec = 0.0;
-								average_tx_bits_per_sec = 0.0;
-							break;
-							}
-						}
-
-				if (average_tx_Gbits_per_sec >= 1) //must be at least a Gig to check
-					check_if_bitrate_too_low(average_tx_Gbits_per_sec, &applied, &suggested, &nothing_done, &tune, aApplyDefTunBest);
-
-				if (vDebugLevel > 5 && (tx_bits_per_sec || rx_bits_per_sec))
-				{
-					fprintf(tunLogPtr, "%s %s: ***Sleeping for %d microseconds before resuming Bitrate checking...\n", ctime_buf, phase2str(current_phase), gInterval);
-					fflush(tunLogPtr);
-				}
-				
-				average_tx_Gbits_per_sec = 0.0;
-				average_tx_bits_per_sec = 0.0;
-
-				//msleep(gInterval/1000); //msleep sleeps in milliseconds
-				my_usleep(gInterval); //sleeps in microseconds
-			}
-
-			break;
-		}
-		else
-			{
-				printf("Not working****\n");
-				return ((char *) 0);
-			}
-	}
-
-	if (stage)
-	{
-		stage = 0;
-		goto start;
-	}
-
-	printf("Problems*** stage not set...\n");
 
 return ((char *) 0);
 }
-#endif
+
 
 //Measured in milliseconds
 #define RTT_THRESHOLD	50 
