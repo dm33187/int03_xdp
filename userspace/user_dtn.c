@@ -1863,6 +1863,8 @@ void catch_sigchld()
 
 void ignore_sigchld()
 {
+	time_t clk;
+        char ctime_buf[27];
 	int sigret;
 	static struct sigaction act;
         memset(&act, 0, sizeof(act));
@@ -1871,11 +1873,13 @@ void ignore_sigchld()
         sigemptyset(&act.sa_mask); //no additional signals will be blocked
         act.sa_flags = 0;
 
+	gettime(&clk, ctime_buf);
+
         sigret = sigaction(SIGCHLD, &act, NULL);
 	if (sigret == 0)
-		printf("SIGCHLD ignored***\n");
+		fprintf(tunLogPtr, "%s %s: SIGCHLD ignored***\n", ctime_buf, phase2str(current_phase));
 	else
-		printf("SIGCHLD not ignored***\n");
+		fprintf(tunLogPtr, "%s %s: SIGCHLD notignored***\n", ctime_buf, phase2str(current_phase));
 	
 	return;
 }
@@ -2089,13 +2093,6 @@ int main(int argc, char **argv)
 	if (fork() != 0) /* make daemon process */
 		exit(0);
 
-	ignore_sigchld(); //won't leave zombie processes
-
-	sArgv.argc = argc;
-	sArgv.argv = argv;
-	
-	catch_sigint();
-
 	system("sh ./user_menu.sh"); //make backup of tuningLog first if already exist
 	tunLogPtr = fopen("/tmp/tuningLog","w");
 	if (!tunLogPtr)
@@ -2106,6 +2103,13 @@ int main(int argc, char **argv)
 
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr, "%s %s: tuning Log opened***\n", ctime_buf, phase2str(current_phase));
+
+	ignore_sigchld(); //won't leave zombie processes
+
+	sArgv.argc = argc;
+	sArgv.argv = argv;
+	
+	catch_sigint();
 
 	fDoGetUserCfgValues();
 	if (argc == 3)

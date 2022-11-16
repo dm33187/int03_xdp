@@ -185,7 +185,7 @@ install_tm()
 {
 logcount=
 	clear_screen
-	printf '\n%s' "Welcome to the Tuning Module installation procedure"
+	printf '\n%s' "Welcome to the Tuning Module installation procedure."
 	printf '\n%s' "Please see the readme.txt file for important information "
 	printf '\n%s\n' "after installing this package..."
 	printf '\n%s' "NOTE: The user_config.txt file contains default behavior for"
@@ -194,8 +194,8 @@ logcount=
 	sleep 2
 	printf '\n###%s\n\n' "Preparing to install the Tuning Module..."
 	sleep 1
-	echo "This product normally installs into the ${default_dir} directory. If"
-	echo "you would like to install to a different directory you can enter"
+	echo "This product normally installs into the ${default_dir} directory."
+	echo "If you would like to install to a different directory you can enter"
 	echo "that directory name now or press <ENTER> to continue."
 	echo ""
 	read pathname

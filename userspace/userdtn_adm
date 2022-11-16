@@ -12,24 +12,8 @@ USAGE="Usage: userdtn_adm {start | shutdown | stop}"
 PATH=$PATH:`pwd`
 export PATH
 
-CLEAR_CMD="/bin/clear"
-HOSTNAME_CMD="/bin/uname -n"
-LN_CMD="/bin/ln"
-MKDIR_CMD="/bin/mkdir"
-PS_CMD="/bin/ps"
-RM_CMD="/bin/rm"
-SED_CMD="/bin/sed"
-UNAME="/bin/uname"
-
-RESOLV_CONF=/etc/resolv.conf
-ETC_HOSTS=/etc/hosts
-ETC_SERVICES="/etc/services"
-
-HOSTNAME=`uname -n`
-
 YES=0
 NO=1
-MAXSTRDBGLVL=9
 
 #set -x         # for debugging this script
 # verify superuser status
@@ -181,7 +165,7 @@ termin()
 #
    trap 'exit 3' 15
 
-    OS_TYP_VER=`$UNAME -s`-`$UNAME -r`
+    OS_TYP_VER=`uname -s`-`uname -r`
 
         #
         # Do system dependent things
@@ -202,7 +186,7 @@ termin()
        if [ -f /usr/bin/whoami ] ; then
           WHO="`/usr/bin/whoami`"
        else
-  WHO="`$PS_CMD -f | grep ps | grep -v grep | awk '{print $1}'`"
+  WHO="`ps -f | grep ps | grep -v grep | awk '{print $1}'`"
        fi
     fi
 
