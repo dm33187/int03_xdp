@@ -25,7 +25,7 @@ static void gettime(time_t *clk, char *ctime_buf)
 
 FILE * tunLogPtr = 0;
 void fDoGetUserCfgValues(void);
-int fCheckInterfaceExists();
+int fCheckInterfaceExist();
 void fDoGetDeviceCap(void);
 void fDoBiosTuning(void);
 void fDoNicTuning(void);

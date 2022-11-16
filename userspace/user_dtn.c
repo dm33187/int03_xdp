@@ -11,6 +11,7 @@
 #include <ctype.h>
 #include <getopt.h>
 #include <pthread.h>
+#include <sys/prctl.h>
 #include <signal.h>
 #include <sys/wait.h>
 
@@ -209,7 +210,7 @@ static int vDebugLevel = 0;
 #define SIGINT_MSG "SIGINT received.\n"
 void sig_int_handler(int signum, siginfo_t *info, void *ptr)
 {
-	write(STDERR_FILENO, SIGINT_MSG, sizeof(SIGINT_MSG));
+	//write(STDERR_FILENO, SIGINT_MSG, sizeof(SIGINT_MSG));
 	fprintf(tunLogPtr,"Caught SIGINT, exiting...\n");
 	fclose(tunLogPtr);
 
@@ -1779,18 +1780,30 @@ void * fDoRunHelperDtn(void * vargp)
 	if (sb.st_size == 0); //good - no runaway process
 	else //kill it
 	{
-		printf("Killing runaway help_dtn.sh process\n");
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Killing runaway help_dtn.sh process\n", ctime_buf, phase2str(current_phase));
 		system("pkill -9 help_dtn.sh");
 	}
 
 	system("rm -f /tmp/help_dtn_alive.out");
 	sleep(1); //relax
 
-restart_vfork:
-	printf("About to fork new help_dtn.sh process\n");
-	pid_t pid = vfork();
+restart_fork:
+	gettime(&clk, ctime_buf);
+	fprintf(tunLogPtr, "%s %s: ***About to fork new help_dtn.sh process\n", ctime_buf, phase2str(current_phase));
+	fflush(tunLogPtr);
+
+	pid_t ppid_before_fork = getpid();
+	pid_t pid = fork();
 	if (pid == 0)
 	{ 
+		int r = prctl(PR_SET_PDEATHSIG, SIGTERM); //tell me if my parent went away
+		if (r == -1) { perror(0); exit(1); }
+		// test in case the original parent exited just
+		// before the prctl() call
+		if (getppid() != ppid_before_fork)
+			exit(1);
+		// continue child execution ...
 		if (execlp("./help_dtn.sh", "help_dtn.sh", netDevice, (char*) NULL) == -1)
 		{
 			perror("Could not execlp");
@@ -1815,7 +1828,7 @@ restart_vfork:
 			int status;
 			system("rm -f /tmp/help_dtn_alive.out");
 			wait(&status);
-			goto restart_vfork;
+			goto restart_fork;
 		}
 
 		system("rm -f /tmp/help_dtn_alive.out");
@@ -2065,7 +2078,17 @@ int main(int argc, char **argv)
 	sArgv_t sArgv;
 	time_t clk;
 	char ctime_buf[27];
-	 
+	int vExitValue = 0;
+
+	/*
+	 * Make a daemon process
+	 * - run in the backgound
+	 * - prevent output from process from going to the controlling terminal
+	 */
+
+	if (fork() != 0) /* make daemon process */
+		exit(0);
+
 	ignore_sigchld(); //won't leave zombie processes
 
 	sArgv.argc = argc;
@@ -2084,17 +2107,78 @@ int main(int argc, char **argv)
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr, "%s %s: tuning Log opened***\n", ctime_buf, phase2str(current_phase));
 
+	fDoGetUserCfgValues();
 	if (argc == 3)
+	{
+		int vRet;
 		strcpy(netDevice,argv[2]);
+		fprintf(tunLogPtr, "%s %s: using Device name %s supplied from command line***\n", ctime_buf, phase2str(current_phase), netDevice);
+		vRet = fCheckInterfaceExist();
+		if (!vRet)
+		{
+			int vSpeedInGb;
+			fprintf(tunLogPtr, "%s %s: Found Device %s***\n", ctime_buf, phase2str(current_phase), argv[2]);
+			fDoGetDeviceCap(); //Will set netDeviceSpeed if device is UP
+			vSpeedInGb = netDeviceSpeed/1000; //Should become zero if invalid speed (0 or -1)
+			if (!vSpeedInGb)
+			{
+				fprintf(tunLogPtr, "%s %s: Device *%s* link is probably DOWN as its speed in invalid.***\n", ctime_buf, phase2str(current_phase), argv[2]);
+				fprintf(tunLogPtr, "%s %s: Please use a device whose link is UP. Exiting...***\n", ctime_buf, phase2str(current_phase));
+				fflush(tunLogPtr);
+				vExitValue = -3;
+				goto leave;
+			}
+		}
+		else
+			{
+				gettime(&clk, ctime_buf);
+				fprintf(tunLogPtr, "%s %s: Device not found, Invalid device name *%s*, Exiting...***\n", ctime_buf, phase2str(current_phase), argv[2]);
+				vExitValue = -1;
+				goto leave;
+			}
+	}
 	else
 		{
 			gettime(&clk, ctime_buf);
-			fprintf(tunLogPtr, "%s %s: Device name not supplied, exiting***\n", ctime_buf, phase2str(current_phase));
-			exit(-3);
+			if (gNic_to_use)
+			{
+				int vRet;
+				strcpy(netDevice,gNic_to_use);
+				fprintf(tunLogPtr, "%s %s: using Device name %s supplied from file *user_config.txt*\n", ctime_buf, phase2str(current_phase), netDevice);
+				vRet = fCheckInterfaceExist();
+				if (!vRet)
+				{
+					int vSpeedInGb;
+					fprintf(tunLogPtr, "%s %s: Found Device %s***\n", ctime_buf, phase2str(current_phase), netDevice);
+					fDoGetDeviceCap(); //Will set netDeviceSpeed if device is UP
+					vSpeedInGb = netDeviceSpeed/1000; //Should become zero if invalid speed (0 or -1)
+					if (!vSpeedInGb)
+					{
+						fprintf(tunLogPtr, "%s %s: Device *%s* link is probably DOWN as its speed in invalid.***\n", ctime_buf, phase2str(current_phase), netDevice);
+						fprintf(tunLogPtr, "%s %s: Please use a device whose link is UP. Exiting...***\n", ctime_buf, phase2str(current_phase));
+						fflush(tunLogPtr);
+						vExitValue = -4;
+						goto leave;
+					}
+				}
+				else
+					{
+						gettime(&clk, ctime_buf);
+						fprintf(tunLogPtr, "%s %s: Device not found, Invalid device name *%s*, Exiting...***\n", ctime_buf, phase2str(current_phase), netDevice);
+						vExitValue = -5;
+						goto leave;
+					}
+			}
+			else //shouldn't happen
+				{
+					fprintf(tunLogPtr, "%s %s: Device name not supplied, exiting***\n", ctime_buf, phase2str(current_phase));
+					exit(-3);
+				}
 		}
 
-	open_csv_file();	
+	fflush(tunLogPtr);
 
+	open_csv_file();	
 	user_assess(argc, argv);
 	fCheck_log_limit();
 	
@@ -2145,10 +2229,11 @@ int main(int argc, char **argv)
 	if (vRetFromRunSendMessageToPeerThread == 0)
     		vRetFromRunSendMessageToPeerJoin = pthread_join(doRunSendMessageToPeerThread_id, NULL);
 
+leave:
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr, "%s %s: Closing tuning Log***\n", ctime_buf, phase2str(current_phase));
 	fclose(tunLogPtr);
 
-return 0;
+return vExitValue;
 }
 

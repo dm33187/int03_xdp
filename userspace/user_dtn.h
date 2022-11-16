@@ -34,12 +34,13 @@ extern int gAPI_listen_port;
 extern int gSource_Dtn_Port;
 extern char gTuningMode;
 extern char netDevice[];
+extern char *gNic_to_use;
 extern int netDeviceSpeed;
-
-
 
 extern void gettime(time_t *clk, char *ctime_buf);
 extern int user_assess(int argc, char **argv);
+extern int fCheckInterfaceExist();
+extern void fDoGetDeviceCap(void);
 extern void fDoGetUserCfgValues(void);
 extern void fDoBiosTuning(void);
 extern void fDoNicTuning(void);
