@@ -23,7 +23,7 @@ The file you are currently reading.
 user_config.txt 
 ===============
 In the user_config.txt, the operator can use certain well known values to 
-control how the Tuning Module operates.  So far, there are 9 parameters 
+control how the Tuning Module operates.  So far, there are 10 parameters 
 that can be used.  The following is an explanation for each one: 
 
 a. evaluation timer  
@@ -73,6 +73,8 @@ The source_dtn_port parameter is used to allow communication from the
 destination DTN to the source DTN. This enables the peers to send information
 regarding performance issues to the source.  The default value is 5524.
 
+j. nic_to_use
+The name of the NIC that the Tuning Module will be working with. Eg. enp6s0.
 gdv_100.sh
 ==========
 Same as gdv.sh below, but used for NICs with speeds >= 100G

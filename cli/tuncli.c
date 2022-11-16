@@ -28,7 +28,7 @@ int main(int argc, const char *argv[])
 	char *gAPI_listen_port = "5523"; //default
 	char *pAPI_listen_port_name = "API_listen_port";
 	const char * argv_try[2];
-	char *pUserCfgFile = "../../userspace/user_config.txt";
+	char *pUserCfgFile = "user_config.txt";
 	FILE *userCfgPtr = 0;
 	int found = 0;
 	char *line = NULL;
