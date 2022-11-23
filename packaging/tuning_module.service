@@ -1,0 +1,12 @@
+[Unit]
+Description=Load Firmware on netro-switch
+After=network-online.target
+
+[Service]
+Environment=TUNING_MODULE_HOME=TM_PKG_DIR
+
+ExecStart=TM_PKG_DIR/userdtn_adm start
+ExecStop=TM_PKG_DIR/userdtn_adm stop
+
+[Install]
+WantedBy=multi-user.target

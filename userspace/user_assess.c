@@ -40,6 +40,7 @@ char gApplyDefSysTuning = 'n';
 char gMakeTuningPermanent = 'n';
 int gMaxnum_tuning_logs = 10; //default
 char *gNic_to_use = 0;
+char *gNic_attach_type = 0;
 
 enum workflow_phases current_phase = STARTING;
 
@@ -58,7 +59,7 @@ const char *phase2str(enum workflow_phases phase)
 }
 
 /* Must change NUMUSERVALUES below if adding more values */
-#define NUMUSERVALUES	10
+#define NUMUSERVALUES	11
 #define USERVALUEMAXLENGTH	256
 typedef struct {
 	char aUserValues[USERVALUEMAXLENGTH];
@@ -75,7 +76,8 @@ sUserValues_t userValues = {{"evaluation_timer", "500000", "-1"},
 			{"make_default_system_tuning_perm","n","-1"},
 			{"maxnum_tuning_logs","10","-1"},
 			{"source_dtn_port","5524","-1"},
-			{"nic_to_use","na","-1"}
+			{"nic_to_use","na","-1"},
+			{"nic_attach_type","xdpoffload","-1"}
 			};
 
 void fCheck_log_limit(void)
@@ -295,6 +297,14 @@ void fDoGetUserCfgValues(void)
 													gNic_to_use = userValues[count].cfg_value;
 												}
 											}
+											else 
+												if (strcmp(userValues[count].aUserValues,"nic_attach_type") == 0)
+												{
+													if (strcmp(userValues[count].cfg_value, "-1") == 0) //no value in text file 
+														gNic_attach_type = userValues[count].default_val;
+													else
+														gNic_attach_type = userValues[count].cfg_value;
+												}
 	}
 
 	gettime(&clk, ctime_buf);

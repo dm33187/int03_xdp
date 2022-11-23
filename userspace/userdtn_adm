@@ -222,10 +222,17 @@ case "$1" in
         echo
         echo "Tuning Module Startup ..."
 
-        # Start the user_dtn; use -d <debuglevel> for debugging
+        # Start the user_dtn
+	sleep 1
+	echo "Loading object and pinning map paths..."
+	nic=$(grep nic_to_use user_config.txt | awk '{print $2}')
+	bpftool prog load int-sink2+filter.bpf.o /sys/fs/bpf/test dev $nic pinmaps /sys/fs/bpf/test_maps/
+	bpftool net attach xdpoffload pinned /sys/fs/bpf/test dev $nic
+	sleep 1
+	echo "Starting user_dtn process..."
         user_dtn
 
-        sleep 2
+        sleep 1
         echo
         echo "Tuning Module Startup Completed"
 
@@ -236,7 +243,7 @@ case "$1" in
 'stop' | 'shutdown')
         #       The stopcdm utility will complete only after
         #       executing the following shell commands.
-        #       This ensures that all express daemons have
+        #       This ensures that all tuning module daemons have
         #       been killed.
 
         echo
@@ -258,6 +265,24 @@ case "$1" in
 
         # kill the user_dtn daemon
         KillNamedProcess user_dtn
+	sleep 1
+	echo "Detaching bpf program from NIC..."
+	nic=$(grep nic_to_use user_config.txt | awk '{print $2}')
+	bpftool net detach xdpoffload dev $nic
+
+	sleep 1
+	echo "Removing bpf tuning module map directories no longer needed..."
+	if [ -d /sys/fs/bpf/test_maps ]
+	then
+		rm -rf /sys/fs/bpf/test_maps
+	fi
+	
+	sleep 1
+	echo "Removing bpf tuning module files no longer needed..."
+	if [ -f /sys/fs/bpf/test ]
+	then
+		rm -f /sys/fs/bpf/test
+	fi
 
         sleep 2                 # for delay before possible re-start
         echo
