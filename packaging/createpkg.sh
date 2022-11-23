@@ -41,9 +41,10 @@ cp ../userspace/gdv.sh .
 cp ../userspace/readme.txt .
 cp ../util/plotgraph.py .
 cp ../util/conv_csv_to_json.py .
+cp obj/int-sink2+filter.bpf.o .
 
 rm -f SAdtntune.zip
-zip SAdtntune.zip tuncli user_dtn userdtn_adm help_dtn.sh user_config.txt user_menu.sh gdv_100.sh gdv.sh readme.txt common_irq_affinity.sh set_irq_affinity.sh plotgraph.py conv_csv_to_json.py install.sh
+zip SAdtntune.zip tuncli user_dtn userdtn_adm help_dtn.sh user_config.txt user_menu.sh gdv_100.sh gdv.sh readme.txt common_irq_affinity.sh set_irq_affinity.sh plotgraph.py conv_csv_to_json.py install.sh tuning_module.service int-sink2+filter.bpf.o
 #
 rm tuncli 
 rm user_dtn 
@@ -58,5 +59,6 @@ rm gdv.sh
 rm readme.txt 
 rm plotgraph.py 
 rm conv_csv_to_json.py 
+rm int-sink2+filter.bpf.o
 echo "Finished Creating Tuning Module StandAlone package..."
 

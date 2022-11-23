@@ -1,5 +1,10 @@
 *.o
 *.ll
+*.json
+*.csv
+*.org
+tt*
+test*
 assess-tuning/dtn_tune
 testing/xdp_loader
 testing/xdp_loader_light
