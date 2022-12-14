@@ -181,6 +181,23 @@ copy_files()
 	mv int-sink2+filter.bpf.o $pathname
 }
 
+finish_up()
+{
+	pathname2=$(echo "$pathname" | sed 's/\//\\\//g')
+	sedstring="s/TM_PKG_DIR/${pathname2}/g"
+	sed -i ${sedstring} userdtn_adm
+	sed -i ${sedstring} tuning_module.service
+	mv tuning_module.service /etc/systemd/system/.
+	chmod 664 /etc/systemd/system/tuning_module.service
+	systemctl daemon-reload
+	systemctl enable tuning_module.service
+	copy_files
+	echo "The Tuning Module product has been installed in ${pathname}"
+	echo "The Tuning Module product has been installed in ${pathname}" > /tmp/install.tm
+	echo "Press <ENTER> to exit installation program."
+	enter_to_continue
+	exit 0
+}
 default_dir="/usr/tuningmod"
 install_tm()
 {
@@ -209,15 +226,7 @@ logcount=
 	if [ ! -d ${pathname} ]
 	then
 		mkdir -p ${pathname}
-		pathname2=$(echo "$pathname" | sed 's/\//\\\//g')
-		sedstring="s/TM_PKG_DIR/${pathname2}/g"
-		sed -i ${sedstring} tuning_module.service
-		copy_files
-		echo "The Tuning Module product has been installed in ${pathname}"
-		echo "The Tuning Module product has been installed in ${pathname}" > /tmp/install.tm
-		echo "Press <ENTER> to exit installation program."
-		enter_to_continue
-		exit 0
+		finish_up
 	else
 		echo "Directory ${pathname} already exists..."
 		yorn "Are you sure you wish to install in the ${pathname} directory? (Yes/No)" "Y"	
@@ -230,16 +239,7 @@ logcount=
 				echo "Saving ${pathname}/user_config.txt ${pathname}/user_config.txt.$$"
 				cp ${pathname}/user_config.txt ${pathname}/user_config.txt.$$
 			fi
-			pathname2=$(echo "$pathname" | sed 's/\//\\\//g')
-			sedstring="s/TM_PKG_DIR/${pathname2}/g"
-			sed -i ${sedstring} tuning_module.service
-			copy_files
-			echo "The Tuning Module product has been installed in ${pathname}"
-			echo "The Tuning Module product has been installed in ${pathname}" > /tmp/install.tm
-			echo "Press <ENTER> to exit installation program."
-			cd $pathname
-			enter_to_continue
-			exit 0
+			finish_up
 		fi
 
 	fi

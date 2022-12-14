@@ -1056,10 +1056,18 @@ int fCheckInterfaceExist()
 {
 	int vRet;
 	char aNicPath[512];
+	int vSaveErrno = 0;
+	char ctime_buf[27];
+	time_t clk;
 
 	sprintf(aNicPath,"/sys/class/net/%s",netDevice);
 	vRet = access(aNicPath, F_OK);
-
+	if (vRet)
+	{
+		vSaveErrno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr, "%s %s: Accessing Device name %s returns ERRNO %d***\n", ctime_buf, phase2str(current_phase), netDevice, vSaveErrno);
+	}
 	return vRet;
 }
 

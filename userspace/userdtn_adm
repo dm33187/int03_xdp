@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #       userdtn_adm == Start/Stop Daemon Processes for user_dtn
 #
 # Author:       David Miranda
@@ -201,7 +201,7 @@ termin()
 # Execution of script starts here.
 #
 #######################################################################
-
+cd TM_PKG_DIR
 # examine the first parameter
 case "$1" in
 'start')        # Start the daemons
@@ -230,7 +230,7 @@ case "$1" in
 	bpftool net attach xdpoffload pinned /sys/fs/bpf/test dev $nic
 	sleep 1
 	echo "Starting user_dtn process..."
-        user_dtn
+        ./user_dtn $2
 
         sleep 1
         echo
@@ -248,7 +248,7 @@ case "$1" in
 
         echo
         echo "TUNING MODULE SHUTDOWN ..."
-        CheckNamedProcess user_dtn
+        CheckNamedProcess ./user_dtn
 
         if [ $1 = 'shutdown' ]
         then
@@ -264,7 +264,7 @@ case "$1" in
         fi
 
         # kill the user_dtn daemon
-        KillNamedProcess user_dtn
+        KillNamedProcess ./user_dtn
 	sleep 1
 	echo "Detaching bpf program from NIC..."
 	nic=$(grep nic_to_use user_config.txt | awk '{print $2}')

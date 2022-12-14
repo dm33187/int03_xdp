@@ -2090,8 +2090,12 @@ int main(int argc, char **argv)
 	 * - prevent output from process from going to the controlling terminal
 	 */
 
-	if (fork() != 0) /* make daemon process */
-		exit(0);
+	if (argc == 2 && (strcmp(argv[1],"rf") == 0));
+	else
+	{
+		if (fork() != 0) /* make daemon process */
+			exit(0);
+	}
 
 	system("sh ./user_menu.sh"); //make backup of tuningLog first if already exist
 	tunLogPtr = fopen("/tmp/tuningLog","w");
