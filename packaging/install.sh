@@ -80,78 +80,6 @@ Check_OS_Type()
 	esac
 }
 
-Check_And_Remove_Earlier_Versions()
-{
-    if [ $# -ge 1 ]
-    then
-        Rel2Check=$1
-        CheckSupplied=YES
-    else
-        Rel2Check=
-        CheckSupplied=NO
-    fi
-
-    case $OS_TYPE in
-        linux)
-            rmpkg="rpm -e"
-            lspkg="rpm -q"
-            ;;
-    esac
-
-    InstallList=
-    PackagesToRemove=
-        for Pkg in $CheckList
-    do
-        if [ $CheckSupplied = NO ]
-        then
-            Rel2Check=`cat ./$OS_TYPE/$Pkg/info | cut -d',' -f2`
-        fi
-        Get_Installed_Version $Pkg
-        if [ "$CurVers" ]
-        then
-            PackagesToRemove="$PackagesToRemove $Pkg"
-        fi
-        InstallList="$Pkg $InstallList"
-    done
-
-    if [ "$PackagesToRemove" ]
-    then
-        echo "There are earlier/same/newer versions of some of the"
-        echo "packages that your have selected that are already installed:"
-        for Pkg in $PackagesToRemove
-        do
-            Get_Installed_Version $Pkg
-            echo "     $Pkg $CurVers"
-        done
-        echo "These installed packages must be removed prior to installing"
-        echo "version $Rel2Check."
-        echo
-        yorn "Do you wish to remove these packages? (Yes/No)" "N"
-        [ $? -ne 0 ] && exit 1
-        for Pkg in $PackagesToRemove
-        do
-            $rmpkg $Pkg
-            if $lspkg $Pkg > /dev/null 2>&1
-            then
-                echo " Component $Pkg not removed!!."
-                echo " <Enter> to continue: \c"
-                read input
-                exit 1
-            fi
-            if [ $OS_TYPE = solaris ]
-            then
-                PatchesToRemove=`ls -1 /var/sadm/patch | grep -i $Pkg`
-                if [ "$PatchesToRemove.x" != ".x" ]
-                then
-                (
-                    cd /var/sadm/patch; rm -rf $PatchesToRemove
-                )
-                fi
-            fi
-        done
-    fi
-}
-
 clear_screen()
 {
 	tput clear
@@ -248,10 +176,6 @@ logcount=
 	return 0
 }
 
-UsageString="\
-Usage:\\t[sudo ./dtnmenu]\\t\\t- Configure Tunables \\n\
-\\t[sudo ./dtnmenu <device>]\\t- Configure Tunables and Device"
-
 # main execution thread
 
 if [ `id -u` = 0 ]
@@ -264,7 +188,6 @@ else
 fi
 
 Check_OS_Type
-Check_And_Remove_Earlier_Versions
 repeat_main=1
 while  [ $repeat_main = 1 ]
 do
