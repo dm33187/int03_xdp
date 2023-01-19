@@ -526,7 +526,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			fprintf(tunLogPtr, "%s %s: ingress_time = %u\n",ctime_buf, phase2str(current_phase), ingress_time);
 			fprintf(tunLogPtr, "%s %s: egress_time = %u\n",ctime_buf, phase2str(current_phase), egress_time);
 			fprintf(tunLogPtr, "%s %s: time_in_hop = %u\n",ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
-			fprintf(tunLogPtr, "%s %s: hop_latency = %u\n",ctime_buf, phase2str(current_phase), ntohl(hop_metadata_ptr->hop_latency));
+//			fprintf(tunLogPtr, "%s %s: hop_latency = %u\n",ctime_buf, phase2str(current_phase), ntohl(hop_metadata_ptr->hop_latency));
 //			fprintf(stdout, "sizeof struct int_hop-metadata = %lu\n",sizeof(struct int_hop_metadata));
 //			fprintf(stdout, "sizeof struct hop_key = %lu\n",sizeof(struct hop_key));
 		}
