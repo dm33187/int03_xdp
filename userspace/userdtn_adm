@@ -202,6 +202,9 @@ termin()
 #
 #######################################################################
 cd TM_PKG_DIR
+nic=$(grep nic_to_use user_config.txt | awk '{print $2}')
+attach_type=$(grep nic_attach_type user_config.txt | awk '{print $2}')
+
 # examine the first parameter
 case "$1" in
 'start')        # Start the daemons
@@ -225,9 +228,9 @@ case "$1" in
         # Start the user_dtn
 	sleep 1
 	echo "Loading object and pinning map paths..."
-	nic=$(grep nic_to_use user_config.txt | awk '{print $2}')
 	bpftool prog load int-sink2+filter.bpf.o /sys/fs/bpf/test dev $nic pinmaps /sys/fs/bpf/test_maps/
-	bpftool net attach xdpoffload pinned /sys/fs/bpf/test dev $nic
+	echo "Attaching bpf program to network interface using $attach_type..."
+	bpftool net attach $attach_type pinned /sys/fs/bpf/test dev $nic
 	sleep 1
 	echo "Starting user_dtn process..."
         ./user_dtn $2
@@ -267,8 +270,7 @@ case "$1" in
         KillNamedProcess ./user_dtn
 	sleep 1
 	echo "Detaching bpf program from NIC..."
-	nic=$(grep nic_to_use user_config.txt | awk '{print $2}')
-	bpftool net detach xdpoffload dev $nic
+	bpftool net detach $attach_type dev $nic
 
 	sleep 1
 	echo "Removing bpf tuning module map directories no longer needed..."
