@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Author: Italo Valcy
 # Modified: David Miranda
 
@@ -17,6 +17,6 @@ IF=$1
 
 while true
 do
-	R1=`cat /sys/class/net/$IF/statistics/rx_bytes`
+	cat /sys/class/net/$IF/statistics/rx_bytes > /dev/null
 	sleep $INTERVAL
 done
