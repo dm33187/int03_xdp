@@ -537,7 +537,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			if (vDebugLevel > 2)
 			{
 				gettime(&clk, ctime_buf);
-				fprintf(tunLogPtr, "%s %s: ***hop_hop_latency_threshold = %u\n", ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
+				fprintf(tunLogPtr, "%s %s: ***time_in_hop = %u\n", ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
 				fprintf(tunLogPtr, "%s %s: ***Qinfo = %u\n", ctime_buf, phase2str(current_phase), Qinfo);
 			}
 		}
@@ -555,7 +555,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 					{
 						gettime(&clk, ctime_buf);
 						if (hop_hop_latency_threshold > vHOP_LATENCY_DELTA)
-							fprintf(tunLogPtr, "%s %s: ***hop_hop_latency_threshold = %u\n", ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
+							fprintf(tunLogPtr, "%s %s: ***time_in_hop = %u\n", ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
 						else
 							fprintf(tunLogPtr, "%s %s: ***Qinfo = %u\n", ctime_buf, phase2str(current_phase), Qinfo);
 					}
@@ -606,7 +606,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 		if (flow_hop_latency_threshold > vFLOW_LATENCY_DELTA)
 		{
 			gettime(&clk, ctime_buf);
-			fprintf(tunLogPtr, "%s %s: ***flow_hop_latency_threshold = %lld\n", ctime_buf, phase2str(current_phase), flow_hop_latency_threshold);
+			fprintf(tunLogPtr, "%s %s: ***flow_total_time_in_all_hops = %lld\n", ctime_buf, phase2str(current_phase), flow_hop_latency_threshold);
 		}
 
 		fflush(tunLogPtr);
