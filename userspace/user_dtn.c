@@ -2200,6 +2200,7 @@ int main(int argc, char **argv)
 
 	vGoodBitrateValue = ((95/(double)100) * netDeviceSpeed); //99% of NIC speed must be a good bitrate
 	fprintf(tunLogPtr, "%s %s: ***vGoodBitrateValue = %.1f***\n", ctime_buf, phase2str(current_phase), vGoodBitrateValue);
+	fprintf(tunLogPtr, "%s %s: ***Numa Node for %s is %d***\n", ctime_buf, phase2str(current_phase), netDevice, numaNode);
 	fflush(tunLogPtr);
 
 	//Start Collector Thread - collect from int-sink

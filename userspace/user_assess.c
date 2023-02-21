@@ -29,6 +29,7 @@ int gAPI_listen_port = 5523; //default listening port
 int gSource_Dtn_Port = 5524; //default listening port
 int netDeviceSpeed = 0;
 int numaNode = 0;
+char * numaNodeString = 0;
 static int netDevice_rx_ring_buff_cfg_max_val = 0;
 static int netDevice_tx_ring_buff_cfg_max_val = 0;
 
@@ -1194,6 +1195,14 @@ int fDoGetNuma(void)
 	return numa;
 }
 
+char * fDoGetNumaNodeString()
+{
+	char yy[256];
+
+	return yy;
+
+
+}
 
 static int rec_txqueuelen_Greater10G = 20000; //recommended value for now if greater 10G
 //static int rec_txqueuelen_Greater10G = 10000; //recommended value for now if greater 10G
@@ -2041,6 +2050,8 @@ int user_assess(int argc, char **argv)
 
 	//fDoGetDeviceCap();
 	numaNode = fDoGetNuma();
+	
+	numaNodeString = fDoGetNumaNodeString();
 
 	fDoSystemTuning();
 
