@@ -57,6 +57,7 @@ void open_csv_file(void)
 
 static time_t now_time = 0;
 static time_t last_time = 0;
+static  int vIamASrcDtn = 0;
 time_t calculate_delta_for_csv(void);
 time_t calculate_delta_for_csv(void)
 {
@@ -82,6 +83,8 @@ static unsigned int sleep_count = 5;
 static double vGoodBitrateValue = 0.0;
 struct args test;
 char aSrc_Ip[32];
+char aDest_Ip2[32];
+
 union uIP {
 	 __u32 y;
        	 unsigned char  a[4];
@@ -1239,6 +1242,8 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 }
 
 #define MAX_TUNING_APPLY	10
+static int new_traffic = 1;
+static int rx_traffic = 0;
 static double previous_average_tx_Gbits_per_sec = 0.0;
 void * fDoRunGetThresholds(void * vargp)
 {
@@ -1263,6 +1268,7 @@ void * fDoRunGetThresholds(void * vargp)
 	int stage = 0;
 	int applied = 0, suggested = 0, nothing_done = 0, max_apply = 0, something_wrong_check = 0;
 	int tune = 1; //1 = up, 2 = down - tune up initially
+	static unsigned long count = 0;
 
 	sprintf(try,"bpftrace -e \'BEGIN { @name;} kprobe:dev_get_stats { $nd = (struct net_device *) arg0; @name = $nd->name; } kretprobe:dev_get_stats /@name == \"%s\"/ { $rtnl = (struct rtnl_link_stats64 *) retval; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); } interval:s:1 { exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu");
 	/* fix for kfunc below too */
@@ -1531,6 +1537,28 @@ start:
 	}
 
 	msleep(1000); //give it another second to quiesce
+	if (!rx_kbits_per_sec)
+	{
+		rx_traffic = 0;
+		new_traffic = 0;
+		if (vDebugLevel > 1)
+		{
+			fprintf(tunLogPtr, "%s %s: ***Not new traffic %lu***\n", ctime_buf, phase2str(current_phase), count++);
+			fflush(tunLogPtr);
+		}
+	}
+
+	if (rx_kbits_per_sec && !rx_traffic)
+	{
+		rx_traffic = 1;
+		new_traffic = 1;
+		if (vDebugLevel > 1)
+		{
+			fprintf(tunLogPtr, "%s %s: ***New traffic %lu***\n", ctime_buf, phase2str(current_phase), count++);
+			fflush(tunLogPtr);
+		}
+	}
+
 
 ck_stage:
 	if (stage)
@@ -1696,7 +1724,6 @@ void fDoManageRtt(double average_tx_Gbits_per_sec, int * applied, int * suggeste
 return;
 }
 
-char aDest_Ip2[32];
 int fFindRttUsingPing()
 {
 	time_t clk;
@@ -1704,32 +1731,26 @@ int fFindRttUsingPing()
 	char buffer[128];
 	FILE *pipe;
 	char try[1024];
-	char aApplyDefTunBest[MAX_SIZE_SYSTEM_SETTING_STRING];
-	double avg_rtt_ping = 0.0, highest_rtt = 0.0;
-	int applied = 0, suggested = 0, nothing_done = 0;
-	int tune = 1; //1 = up, 2 = down - tune up initially
+	double avg_rtt_ping = 0.0;
         char * foundstr = 0;
 	int found = 0;
 
-//	memset(aDest_Ip2,0,32);
-
-	gettime(&clk, ctime_buf);
-        
 	if (aDest_Ip2[0] == 0)
 	{
-		//printf("here1***\n");
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Waiting on Peer Ip address to Ping***\n", ctime_buf, phase2str(current_phase));
+		fflush(tunLogPtr);
 		return 0; //didn't get  a message from the peer yet
 	}
 	
 	sprintf(try,"ping -c 3 %s", aDest_Ip2);
 
-	//printf("here2***\n");
 	avg_rtt_ping = 0;
-	highest_rtt = 0;
 	pipe = popen(try,"r");
 	if (!pipe)
 	{
 		printf("popen failed!\n");
+		printf("here2***\n");
 		return -1;
 	}
 
@@ -1742,13 +1763,12 @@ int fFindRttUsingPing()
 				goto finish_up;
 			}
 
-		fprintf(tunLogPtr,"%s %s: ***buffer***%s\n", ctime_buf, phase2str(current_phase),buffer);
-		fflush(tunLogPtr);
-                                
 		foundstr = strstr(buffer,"avg");
-		//should look like : "rtt min/avg/max/mdev = 0.314/0.341/0.366/0.021 ms"
+		//should look like example: "rtt min/avg/max/mdev = 0.314/0.341/0.366/0.021 ms"
                 if (foundstr)
                 {
+			gettime(&clk, ctime_buf);
+			fprintf(tunLogPtr,"\n%s %s: ***using \"%s\" returns *%s*", ctime_buf, phase2str(current_phase),try, buffer);
 			foundstr = strchr(foundstr,'=');
 			if (foundstr)
 			{
@@ -1762,7 +1782,9 @@ int fFindRttUsingPing()
 					q = strchr(foundstr,'/');
 					if (q)
 					{
+						char * strpart;
 						strncpy(value,foundstr,q-foundstr);
+						avg_rtt_ping = strtod(value, &strpart);
 						found = 1;
 						break;	
 					}
@@ -1771,58 +1793,23 @@ int fFindRttUsingPing()
 		}
 		else
 			continue;
-#if 0
-		sscanf(buffer,"%lu", &rtt);
-		if (rtt > highest_rtt)
-			highest_rtt = rtt;
-
-
-
-#if 1
-		if (vDebugLevel > 6 && previous_average_tx_Gbits_per_sec) 
-			fprintf(tunLogPtr,"%s %s: **rtt = %luus, highest rtt = %luus\n", ctime_buf, phase2str(current_phase), rtt, highest_rtt);
-#endif
-#endif
 	}
 
 finish_up:
 	pclose(pipe);
 	if (found)
 	{
-		fprintf(tunLogPtr,"%s %s: ***Average RTT using ping is %.3fms\n", ctime_buf, phase2str(current_phase), highest_rtt/(double)1000);
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Average RTT using ping is %.3fms\n", ctime_buf, phase2str(current_phase), avg_rtt_ping);
 		fflush(tunLogPtr);
 	}
 	sleep(1);
-	return 0;
-
-	if (highest_rtt)
-	{
-		if (vDebugLevel > 1 && previous_average_tx_Gbits_per_sec)
-		{
-			gettime(&clk, ctime_buf);
-			fprintf(tunLogPtr,"%s %s: ***Highest RTT is %.3fms\n", ctime_buf, phase2str(current_phase), highest_rtt/(double)1000);
-			fflush(tunLogPtr);
-		}
-
-		if (highest_rtt/1000 >= RTT_THRESHOLD)
-			fDoManageRtt(highest_rtt/1000, &applied, &suggested, &nothing_done, &tune, aApplyDefTunBest);
-	}
-
-	if (vDebugLevel > 5 && previous_average_tx_Gbits_per_sec)
-	{
-		gettime(&clk, ctime_buf);
-		fprintf(tunLogPtr, "%s %s: ***Sleeping for %d microseconds before resuming RTT checking...\n", ctime_buf, phase2str(current_phase), gInterval);
-		fflush(tunLogPtr);
-	}
-
-	my_usleep(gInterval); //sleeps in microseconds	
 
 return 0;
 }
 
 void * fDoRunFindHighestRtt(void * vargp)
 {
-	//int * fd = (int *) vargp;
 	time_t clk;
 	char ctime_buf[27];
 	char buffer[128];
@@ -1841,7 +1828,11 @@ void * fDoRunFindHighestRtt(void * vargp)
 	sprintf(try,"sudo bpftrace -e \'BEGIN { @ca_rtt_us;} kprobe:tcp_ack_update_rtt { @ca_rtt_us = arg4; } kretprobe:tcp_ack_update_rtt /pid != 0/ { printf(\"%s\\n\", @ca_rtt_us); } interval:ms:125 {  exit(); } END { clear(@ca_rtt_us); }\'", "%ld");
 
 rttstart:
-	vRet = fFindRttUsingPing();
+
+	if (vDebugLevel > 1 && previous_average_tx_Gbits_per_sec && vIamASrcDtn)
+	{
+		vRet = fFindRttUsingPing();
+	}
 
 	rtt = 0;
 	highest_rtt = 0;
@@ -1889,7 +1880,7 @@ finish_up:
 		if (vDebugLevel > 1 && previous_average_tx_Gbits_per_sec)
 		{
 			gettime(&clk, ctime_buf);
-			fprintf(tunLogPtr,"%s %s: ***Highest RTT is %.3fms\n", ctime_buf, phase2str(current_phase), highest_rtt/(double)1000);
+			fprintf(tunLogPtr,"%s %s: ***Highest RTT using bpftrace is %.3fms\n", ctime_buf, phase2str(current_phase), highest_rtt/(double)1000);
 			fflush(tunLogPtr);
 		}
 
@@ -2094,6 +2085,11 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 	socklen_t clilen;
 	struct sockaddr_in cliaddr, servaddr;
 	
+#if 1
+			struct sockaddr_in peeraddr;
+			socklen_t peeraddrlen;
+			peeraddrlen = sizeof(peeraddr);
+#endif
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: ***Starting Listener for receiving messages from destination DTN...***\n", ctime_buf, phase2str(current_phase));
 	fflush(tunLogPtr);
@@ -2118,35 +2114,32 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 			else
 				err_sys("accept error");
 		}
+#if 1
+			int retval = getpeername(connfd, (struct sockaddr *) &peeraddr, &peeraddrlen);
+			if (retval == -1) 
+			{
+				fprintf(tunLogPtr,"%s %s: ***Peer error:***\n", ctime_buf, phase2str(current_phase));
+			//	perror("getpeername()");
+			}
+			else
+			{
+
+				char *peeraddrpresn = inet_ntoa(peeraddr.sin_addr);
+
+				fprintf(tunLogPtr,"%s %s: ***Peer information:***\n", ctime_buf, phase2str(current_phase));
+				fprintf(tunLogPtr,"%s %s: ***Peer Address Family: %d***\n", ctime_buf, phase2str(current_phase), peeraddr.sin_family);
+				fprintf(tunLogPtr,"%s %s: ***Peer Port: %d***\n", ctime_buf, phase2str(current_phase), peeraddr.sin_port);
+				fprintf(tunLogPtr,"%s %s: ***Peer IP Address: %s***\n", ctime_buf, phase2str(current_phase), peeraddrpresn);
+				fflush(tunLogPtr);
+				vIamASrcDtn = 1;	
+				strcpy(aDest_Ip2,peeraddrpresn);
+			}
+#endif
         	
 		if ( (childpid = Fork()) == 0) 
 		{        /* child process */
-#if 1
-		struct sockaddr_in peeraddr;
-		socklen_t peeraddrlen;
-		peeraddrlen = sizeof(peeraddr);
-#endif
 
-
-		Close(listenfd); /* close listening socket */
-#if 1
-		int retval = getpeername(connfd, (struct sockaddr *) &peeraddr, &peeraddrlen);
-		if (retval == -1) {
-			perror("getpeername()");
-		}
-		else
-		{
-
-		char *peeraddrpresn = inet_ntoa(peeraddr.sin_addr);
-
-		printf("Peer information:\n");
-		printf("Peer Address Family: %d\n", peeraddr.sin_family);
-		printf("Peer Port: %d\n", ntohs(peeraddr.sin_port));
-		printf("Peer IP Address: %s\n\n", peeraddrpresn);
-		strcpy(aDest_Ip2,peeraddrpresn);
-		}
-#endif
-
+			Close(listenfd); /* close listening socket */
 			process_request(connfd);/* process the request */
 			exit(0);
 		}
