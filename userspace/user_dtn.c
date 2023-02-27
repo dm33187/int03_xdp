@@ -55,6 +55,8 @@ void open_csv_file(void)
 	return;
 }
 
+static int new_traffic = 0;
+static int rx_traffic = 0;
 static time_t now_time = 0;
 static time_t last_time = 0;
 static  int vIamASrcDtn = 0;
@@ -595,9 +597,11 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 		flow_hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		print_hop_key(&hop_key);
 #if 1
-                if (src_ip_addr.y != ntohl(hop_key.flow_key.src_ip))
+                if ((src_ip_addr.y != ntohl(hop_key.flow_key.src_ip)) || new_traffic)
                 {
+			new_traffic = 0;
 			src_ip_addr.y = ntohl(hop_key.flow_key.src_ip);
+			fprintf(tunLogPtr, "%s %s: ***new traffic???***\n", ctime_buf, phase2str(current_phase));
                         Pthread_mutex_lock(&dtn_mutex);
                         strcpy(test.msg, "Hello there!!!\n");
                         test.len = htonl(1);
@@ -1242,8 +1246,6 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 }
 
 #define MAX_TUNING_APPLY	10
-static int new_traffic = 1;
-static int rx_traffic = 0;
 static double previous_average_tx_Gbits_per_sec = 0.0;
 void * fDoRunGetThresholds(void * vargp)
 {
