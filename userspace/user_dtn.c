@@ -1543,11 +1543,6 @@ start:
 	{
 		rx_traffic = 0;
 		new_traffic = 0;
-		if (vDebugLevel > 1)
-		{
-			fprintf(tunLogPtr, "%s %s: ***Not new traffic %lu***\n", ctime_buf, phase2str(current_phase), count++);
-			fflush(tunLogPtr);
-		}
 	}
 
 	if (rx_kbits_per_sec && !rx_traffic)
@@ -1556,6 +1551,7 @@ start:
 		new_traffic = 1;
 		if (vDebugLevel > 1)
 		{
+			gettime(&clk, ctime_buf);
 			fprintf(tunLogPtr, "%s %s: ***New traffic %lu***\n", ctime_buf, phase2str(current_phase), count++);
 			fflush(tunLogPtr);
 		}
