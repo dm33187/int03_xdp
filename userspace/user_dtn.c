@@ -55,8 +55,11 @@ void open_csv_file(void)
 	return;
 }
 
+static int new_traffic = 0;
+static int rx_traffic = 0;
 static time_t now_time = 0;
 static time_t last_time = 0;
+static  int vIamASrcDtn = 0;
 time_t calculate_delta_for_csv(void);
 time_t calculate_delta_for_csv(void)
 {
@@ -82,6 +85,8 @@ static unsigned int sleep_count = 5;
 static double vGoodBitrateValue = 0.0;
 struct args test;
 char aSrc_Ip[32];
+char aDest_Ip2[32];
+
 union uIP {
 	 __u32 y;
        	 unsigned char  a[4];
@@ -591,7 +596,21 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 		flow_threshold_update.hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		flow_hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		print_hop_key(&hop_key);
-		src_ip_addr.y = ntohl(hop_key.flow_key.src_ip);
+#if 1
+                if ((src_ip_addr.y != ntohl(hop_key.flow_key.src_ip)) || new_traffic)
+                {
+			new_traffic = 0;
+			src_ip_addr.y = ntohl(hop_key.flow_key.src_ip);
+			fprintf(tunLogPtr, "%s %s: ***new traffic???***\n", ctime_buf, phase2str(current_phase));
+                        Pthread_mutex_lock(&dtn_mutex);
+                        strcpy(test.msg, "Hello there!!!\n");
+                        test.len = htonl(1);
+                        cdone = 1;
+                        Pthread_cond_signal(&dtn_cond);
+                        Pthread_mutex_unlock(&dtn_mutex);
+		}
+#endif
+		//src_ip_addr.y = ntohl(hop_key.flow_key.src_ip);
 		hop_key.hop_index++;
 
 	}
@@ -756,6 +775,7 @@ void check_req(http_s *h, char aResp[])
 		gettime(&clk, ctime_buf);
 		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change debug level of Tuning Module from %d to %d***\n", ctime_buf, phase2str(current_phase), vDebugLevel, vNewDebugLevel);
 		vDebugLevel = vNewDebugLevel;
+#if 0
 		if (vDebugLevel > 2 && src_ip_addr.y)
 		{
 			Pthread_mutex_lock(&dtn_mutex);
@@ -765,7 +785,7 @@ void check_req(http_s *h, char aResp[])
         		Pthread_cond_signal(&dtn_cond);
         		Pthread_mutex_unlock(&dtn_mutex);
 		}
-
+#endif
 		fprintf(tunLogPtr,"%s %s: ***New debug level is %d***\n", ctime_buf, phase2str(current_phase), vDebugLevel);
 		goto after_check;
 	}
@@ -1120,6 +1140,8 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 							//don't apply - just log suggestions - decided to use a debug level here because this file could fill up if user never accepts recommendation
 							fprintf(tunLogPtr, "%s %s: ***CURRENT TUNING***: %s*",ctime_buf, phase2str(current_phase), buffer);
 							fprintf(tunLogPtr, "%s %s: *** Current Tuning of net.ipv4.tcp_wmem appears sufficient***\n", ctime_buf, phase2str(current_phase));
+							fprintf(tunLogPtr, "%s %s: !!!*****HOWEVER BITRATE IS LOW********!!!\n", ctime_buf, phase2str(current_phase));
+							fprintf(tunLogPtr, "%s %s: !!!*****PLEASE CHECK IF MTU of %s is correct or MTU of VLANS are correct********!!!\n", ctime_buf, phase2str(current_phase), netDevice);
 						}
 						
 						*nothing_done = 1;
@@ -1201,6 +1223,8 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 								//don't apply - just log suggestions - decided to use a debug level here because this file could fill up if user never accepts recommendation
 								fprintf(tunLogPtr, "%s %s: ***CURRENT TUNING***: %s*",ctime_buf, phase2str(current_phase), buffer);
 								fprintf(tunLogPtr, "%s %s: *** Current Tuning of net.ipv4.tcp_wmem appears sufficient***\n", ctime_buf, phase2str(current_phase));
+								fprintf(tunLogPtr, "%s %s: !!!*****HOWEVER BITRATE IS LOW********!!!\n", ctime_buf, phase2str(current_phase));
+								fprintf(tunLogPtr, "%s %s: !!!*****PLEASE CHECK IF MTU of %s is correct or MTU of VLANS are correct********!!!\n", ctime_buf, phase2str(current_phase), netDevice);
 							}
 						}
 						else
@@ -1246,6 +1270,7 @@ void * fDoRunGetThresholds(void * vargp)
 	int stage = 0;
 	int applied = 0, suggested = 0, nothing_done = 0, max_apply = 0, something_wrong_check = 0;
 	int tune = 1; //1 = up, 2 = down - tune up initially
+	static unsigned long count = 0;
 
 	sprintf(try,"bpftrace -e \'BEGIN { @name;} kprobe:dev_get_stats { $nd = (struct net_device *) arg0; @name = $nd->name; } kretprobe:dev_get_stats /@name == \"%s\"/ { $rtnl = (struct rtnl_link_stats64 *) retval; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); } interval:s:1 { exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu");
 	/* fix for kfunc below too */
@@ -1514,6 +1539,24 @@ start:
 	}
 
 	msleep(1000); //give it another second to quiesce
+	if (!rx_kbits_per_sec)
+	{
+		rx_traffic = 0;
+		new_traffic = 0;
+	}
+
+	if (rx_kbits_per_sec && !rx_traffic)
+	{
+		rx_traffic = 1;
+		new_traffic = 1;
+		if (vDebugLevel > 1)
+		{
+			gettime(&clk, ctime_buf);
+			fprintf(tunLogPtr, "%s %s: ***New traffic %lu***\n", ctime_buf, phase2str(current_phase), count++);
+			fflush(tunLogPtr);
+		}
+	}
+
 
 ck_stage:
 	if (stage)
@@ -1679,9 +1722,92 @@ void fDoManageRtt(double average_tx_Gbits_per_sec, int * applied, int * suggeste
 return;
 }
 
+int fFindRttUsingPing()
+{
+	time_t clk;
+	char ctime_buf[27];
+	char buffer[128];
+	FILE *pipe;
+	char try[1024];
+	double avg_rtt_ping = 0.0;
+        char * foundstr = 0;
+	int found = 0;
+
+	if (aDest_Ip2[0] == 0)
+	{
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Waiting on Peer Ip address to Ping***\n", ctime_buf, phase2str(current_phase));
+		fflush(tunLogPtr);
+		return 0; //didn't get  a message from the peer yet
+	}
+	
+	sprintf(try,"ping -c 3 %s", aDest_Ip2);
+
+	avg_rtt_ping = 0;
+	pipe = popen(try,"r");
+	if (!pipe)
+	{
+		printf("popen failed!\n");
+		printf("here2***\n");
+		return -1;
+	}
+
+	while (!feof(pipe))
+	{
+		// use buffer to read and add to result
+		if (fgets(buffer, 128, pipe) != NULL);
+		else
+			{
+				goto finish_up;
+			}
+
+		foundstr = strstr(buffer,"avg");
+		//should look like example: "rtt min/avg/max/mdev = 0.314/0.341/0.366/0.021 ms"
+                if (foundstr)
+                {
+			gettime(&clk, ctime_buf);
+			fprintf(tunLogPtr,"\n%s %s: ***using \"%s\" returns *%s*", ctime_buf, phase2str(current_phase),try, buffer);
+			foundstr = strchr(foundstr,'=');
+			if (foundstr)
+			{
+				foundstr = strchr(foundstr,'/');
+				if (foundstr)
+				{
+					char * q = 0;
+					char value[32];
+					memset(value,0,32);
+					foundstr++;
+					q = strchr(foundstr,'/');
+					if (q)
+					{
+						char * strpart;
+						strncpy(value,foundstr,q-foundstr);
+						avg_rtt_ping = strtod(value, &strpart);
+						found = 1;
+						break;	
+					}
+				}
+                	}
+		}
+		else
+			continue;
+	}
+
+finish_up:
+	pclose(pipe);
+	if (found)
+	{
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Average RTT using ping is %.3fms\n", ctime_buf, phase2str(current_phase), avg_rtt_ping);
+		fflush(tunLogPtr);
+	}
+	sleep(1);
+
+return 0;
+}
+
 void * fDoRunFindHighestRtt(void * vargp)
 {
-	//int * fd = (int *) vargp;
 	time_t clk;
 	char ctime_buf[27];
 	char buffer[128];
@@ -1691,6 +1817,7 @@ void * fDoRunFindHighestRtt(void * vargp)
 	long rtt = 0, highest_rtt = 0;
 	int applied = 0, suggested = 0, nothing_done = 0;
 	int tune = 1; //1 = up, 2 = down - tune up initially
+	int vRet;
 
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: ***Starting Finding Highest RTT thread ...***\n", ctime_buf, phase2str(current_phase));
@@ -1699,6 +1826,12 @@ void * fDoRunFindHighestRtt(void * vargp)
 	sprintf(try,"sudo bpftrace -e \'BEGIN { @ca_rtt_us;} kprobe:tcp_ack_update_rtt { @ca_rtt_us = arg4; } kretprobe:tcp_ack_update_rtt /pid != 0/ { printf(\"%s\\n\", @ca_rtt_us); } interval:ms:125 {  exit(); } END { clear(@ca_rtt_us); }\'", "%ld");
 
 rttstart:
+
+	if (vDebugLevel > 1 && previous_average_tx_Gbits_per_sec && vIamASrcDtn)
+	{
+		vRet = fFindRttUsingPing();
+	}
+
 	rtt = 0;
 	highest_rtt = 0;
 	pipe = popen(try,"r");
@@ -1745,7 +1878,7 @@ finish_up:
 		if (vDebugLevel > 1 && previous_average_tx_Gbits_per_sec)
 		{
 			gettime(&clk, ctime_buf);
-			fprintf(tunLogPtr,"%s %s: ***Highest RTT is %.3fms\n", ctime_buf, phase2str(current_phase), highest_rtt/(double)1000);
+			fprintf(tunLogPtr,"%s %s: ***Highest RTT using bpftrace is %.3fms\n", ctime_buf, phase2str(current_phase), highest_rtt/(double)1000);
 			fflush(tunLogPtr);
 		}
 
@@ -1950,6 +2083,11 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 	socklen_t clilen;
 	struct sockaddr_in cliaddr, servaddr;
 	
+#if 1
+			struct sockaddr_in peeraddr;
+			socklen_t peeraddrlen;
+			peeraddrlen = sizeof(peeraddr);
+#endif
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: ***Starting Listener for receiving messages from destination DTN...***\n", ctime_buf, phase2str(current_phase));
 	fflush(tunLogPtr);
@@ -1974,9 +2112,31 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 			else
 				err_sys("accept error");
 		}
+#if 1
+			int retval = getpeername(connfd, (struct sockaddr *) &peeraddr, &peeraddrlen);
+			if (retval == -1) 
+			{
+				fprintf(tunLogPtr,"%s %s: ***Peer error:***\n", ctime_buf, phase2str(current_phase));
+			//	perror("getpeername()");
+			}
+			else
+			{
+
+				char *peeraddrpresn = inet_ntoa(peeraddr.sin_addr);
+
+				fprintf(tunLogPtr,"%s %s: ***Peer information:***\n", ctime_buf, phase2str(current_phase));
+				fprintf(tunLogPtr,"%s %s: ***Peer Address Family: %d***\n", ctime_buf, phase2str(current_phase), peeraddr.sin_family);
+				fprintf(tunLogPtr,"%s %s: ***Peer Port: %d***\n", ctime_buf, phase2str(current_phase), peeraddr.sin_port);
+				fprintf(tunLogPtr,"%s %s: ***Peer IP Address: %s***\n", ctime_buf, phase2str(current_phase), peeraddrpresn);
+				fflush(tunLogPtr);
+				vIamASrcDtn = 1;	
+				strcpy(aDest_Ip2,peeraddrpresn);
+			}
+#endif
         	
 		if ( (childpid = Fork()) == 0) 
 		{        /* child process */
+
 			Close(listenfd); /* close listening socket */
 			process_request(connfd);/* process the request */
 			exit(0);
@@ -2054,7 +2214,6 @@ cli_again:
 	{
 		goto cli_again;
 	}
-
 	str_cli(sockfd, &test2);         /* do it all */
 	check = shutdown(sockfd, SHUT_WR);
 //	close(sockfd); - use shutdown instead of close
@@ -2196,10 +2355,17 @@ int main(int argc, char **argv)
 
 	memset(sFlowCounters,0,sizeof(sFlowCounters));
 	memset(aSrc_Ip,0,sizeof(aSrc_Ip));
+	memset(aDest_Ip2,0,sizeof(aDest_Ip2));
 	src_ip_addr.y = 0;
 
-	vGoodBitrateValue = ((95/(double)100) * netDeviceSpeed); //99% of NIC speed must be a good bitrate
+	vGoodBitrateValue = ((90/(double)100) * netDeviceSpeed); //90% of NIC speed must be a good bitrate
 	fprintf(tunLogPtr, "%s %s: ***vGoodBitrateValue = %.1f***\n", ctime_buf, phase2str(current_phase), vGoodBitrateValue);
+	fprintf(tunLogPtr, "%s %s: ***Numa Node for %s is %d***\n", ctime_buf, phase2str(current_phase), netDevice, numaNode);
+	if (numaNodeString[0])
+	{
+		fprintf(tunLogPtr, "%s %s: ***You should use one of the following cores for application use when using the %s Device:\n", ctime_buf, phase2str(current_phase), netDevice);
+		fprintf(tunLogPtr, "%s %s: ***%s\n", ctime_buf, phase2str(current_phase), numaNodeString);
+	}
 	fflush(tunLogPtr);
 
 	//Start Collector Thread - collect from int-sink

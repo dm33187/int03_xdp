@@ -36,7 +36,9 @@ extern char gTuningMode;
 extern char netDevice[];
 extern char *gNic_to_use;
 extern int netDeviceSpeed;
-
+extern int numaNode;
+extern char numaNodeString[];
+extern void fDoGetNumaNodeString(char numaString[]);
 extern void gettime(time_t *clk, char *ctime_buf);
 extern int user_assess(int argc, char **argv);
 extern int fCheckInterfaceExist();
