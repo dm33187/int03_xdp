@@ -29,6 +29,7 @@ int gAPI_listen_port = 5523; //default listening port
 int gSource_Dtn_Port = 5524; //default listening port
 int netDeviceSpeed = 0;
 int numaNode = 0;
+char numaNodeString[512]; 
 static int netDevice_rx_ring_buff_cfg_max_val = 0;
 static int netDevice_tx_ring_buff_cfg_max_val = 0;
 
@@ -1194,6 +1195,61 @@ int fDoGetNuma(void)
 	return numa;
 }
 
+void fDoGetNumaNodeString(char numaString[])
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+	char aNicSetting[256];
+	FILE *nicCfgFPtr = 0;
+	int numa = -1;
+	int found = 0;
+	char * foundstr = 0;
+
+	gettime(&clk, ctime_buf);
+	sprintf(aNicSetting,"numactl --hardware > /tmp/NIC.cfgfile 2>/dev/null");
+	system(aNicSetting);
+
+	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
+	if (!nicCfgFPtr)
+	{
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve numa info, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+	}
+	else
+		{
+			sprintf(aNicSetting,"node %d cpus",numaNode);
+
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
+			{
+				foundstr = strstr(line,aNicSetting);
+				if (foundstr)
+				{
+					strcpy(numaString,line);
+					found = 1;
+					break;
+				}
+				else
+					continue;
+			}
+
+			fclose(nicCfgFPtr);
+			system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+		
+			if (!found)
+			{
+				fprintf(tunLogPtr,"%s %s: Could not find set of cpus for Numa Node for %s \n", ctime_buf, phase2str(current_phase), netDevice);
+			}	
+		}
+
+	if (line)
+		free(line);
+
+	return;
+}
 
 static int rec_txqueuelen_Greater10G = 20000; //recommended value for now if greater 10G
 //static int rec_txqueuelen_Greater10G = 10000; //recommended value for now if greater 10G
@@ -2041,6 +2097,8 @@ int user_assess(int argc, char **argv)
 
 	//fDoGetDeviceCap();
 	numaNode = fDoGetNuma();
+	memset(numaNodeString,0,sizeof(numaNodeString));	
+	fDoGetNumaNodeString(numaNodeString);
 
 	fDoSystemTuning();
 
