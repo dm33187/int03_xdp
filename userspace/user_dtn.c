@@ -81,7 +81,7 @@ time_t calculate_delta_for_csv(void)
 pthread_mutex_t dtn_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t dtn_cond = PTHREAD_COND_INITIALIZER;
 static int cdone = 0;
-static unsigned int sleep_count = 5;
+static unsigned int sleep_count = 1;
 static double vGoodBitrateValue = 0.0;
 struct args test;
 char aSrc_Ip[32];
@@ -1086,9 +1086,10 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 	gettime(&clk, ctime_buf);
 	if (average_tx_Gbits_per_sec < vGoodBitrateValue)
 	{
+#if 0
 		fprintf(tunLogPtr,"%s %s: average_tx_Gbits_per_sec = %.2f Gb/s, vGoodBitrateValue Gb/s = %.2f \n",ctime_buf, phase2str(current_phase), average_tx_Gbits_per_sec, vGoodBitrateValue);
 		fflush(tunLogPtr);
-
+#endif
 		if (current_phase == TUNING)
 		{
 			fprintf(tunLogPtr, "%s %s: Trying to tune net.ipv4.tcp_wmem, but already TUNING something else.  Will retry later if still need TUNING***\n",ctime_buf, phase2str(current_phase));
@@ -1273,6 +1274,7 @@ void * fDoRunGetThresholds(void * vargp)
 	unsigned long tx_before, tx_now, tx_bytes_tot;
 	double average_tx_kbits_per_sec = 0.0;
 	double average_tx_Gbits_per_sec = 0.0;
+	double tx_jitter = 0.30;
 	double highest_average_tx_Gbits_per_sec = 0.0;
 	char try[1024];
 	int stage = 0;
@@ -1365,6 +1367,8 @@ start:
 		//average_tx_bits_per_sec = average_tx_bits_per_sec/check_bitrate_interval;
 		average_tx_kbits_per_sec = average_tx_kbits_per_sec/(double)check_bitrate_interval;
 		average_tx_Gbits_per_sec = average_tx_kbits_per_sec/(double)(1000000);
+		if (average_tx_Gbits_per_sec)
+			average_tx_Gbits_per_sec = average_tx_Gbits_per_sec + tx_jitter;
 		check_bitrate_interval = 0;
 	}
 
@@ -1513,7 +1517,12 @@ start:
 				else
 					if (nothing_done) //no change to tuning
 					{
-						if (nothing_done++ > 6)
+						if (vDebugLevel > 0)
+						{
+							fprintf(tunLogPtr, "%s %s: ***What is nothing_done??? and nothing_done is %d ...***\n", ctime_buf, phase2str(current_phase), nothing_done);
+						}
+
+						if (nothing_done++ > 5)
 							nothing_done = 0;
 						else
 						{
@@ -1774,7 +1783,7 @@ int fFindRttUsingPing()
                 if (foundstr)
                 {
 			gettime(&clk, ctime_buf);
-			fprintf(tunLogPtr,"\n%s %s: ***using \"%s\" returns *%s*", ctime_buf, phase2str(current_phase),try, buffer);
+			fprintf(tunLogPtr,"\n%s %s: ***using \"%s\" returns *%s", ctime_buf, phase2str(current_phase),try, buffer);
 			foundstr = strchr(foundstr,'=');
 			if (foundstr)
 			{
@@ -2230,9 +2239,12 @@ cli_again:
 	cdone = 0;
 	Pthread_mutex_unlock(&dtn_mutex);
 
-	gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"%s %s: ***Sending message %d to source DTN...***\n", ctime_buf, phase2str(current_phase), sleep_count);
-	fflush(tunLogPtr);
+	if (vDebugLevel > 1)
+	{
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Sending message %d to source DTN...***\n", ctime_buf, phase2str(current_phase), sleep_count);
+		fflush(tunLogPtr);
+	}
 
 	sockfd = Socket(AF_INET, SOCK_STREAM, 0);
 
@@ -2399,7 +2411,7 @@ int main(int argc, char **argv)
 	memset(aLocal_Ip,0,sizeof(aLocal_Ip));
 	src_ip_addr.y = 0;
 
-	vGoodBitrateValue = (((90/(double)100) * netDeviceSpeed)/(double)1000); //90% of NIC speed must be a good bitrate
+	vGoodBitrateValue = (((88/(double)100) * netDeviceSpeed)/(double)1000); //88% of NIC speed seem to be a good bitrate
 	fprintf(tunLogPtr, "%s %s: ***vGoodBitrateValue = %.1fGb/s***\n", ctime_buf, phase2str(current_phase), vGoodBitrateValue);
 	fprintf(tunLogPtr, "%s %s: ***Numa Node for %s is %d***\n", ctime_buf, phase2str(current_phase), netDevice, numaNode);
 	if (numaNodeString[0])
