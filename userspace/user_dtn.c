@@ -604,8 +604,11 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
                 {
 			new_traffic = 0;
 			src_ip_addr.y = ntohl(hop_key.flow_key.src_ip);
-			gettime(&clk, ctime_buf);
-			fprintf(tunLogPtr, "%s %s: ***new traffic???***\n", ctime_buf, phase2str(current_phase));
+			if (vDebugLevel > 1)
+			{
+				gettime(&clk, ctime_buf);
+				fprintf(tunLogPtr, "%s %s: ***new traffic???***\n", ctime_buf, phase2str(current_phase));
+			}
                         Pthread_mutex_lock(&dtn_mutex);
                         strcpy(test.msg, "Hello there!!!\n");
                         test.len = htonl(1);
@@ -779,17 +782,6 @@ void check_req(http_s *h, char aResp[])
 		gettime(&clk, ctime_buf);
 		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change debug level of Tuning Module from %d to %d***\n", ctime_buf, phase2str(current_phase), vDebugLevel, vNewDebugLevel);
 		vDebugLevel = vNewDebugLevel;
-#if 0
-		if (vDebugLevel > 2 && src_ip_addr.y)
-		{
-			Pthread_mutex_lock(&dtn_mutex);
-        		strcpy(test.msg, "Hello there!!!\n");
-        		test.len = htonl(sleep_count);
-        		cdone = 1;
-        		Pthread_cond_signal(&dtn_cond);
-        		Pthread_mutex_unlock(&dtn_mutex);
-		}
-#endif
 		fprintf(tunLogPtr,"%s %s: ***New debug level is %d***\n", ctime_buf, phase2str(current_phase), vDebugLevel);
 		goto after_check;
 	}
@@ -2083,10 +2075,13 @@ process_request(int sockfd)
 		if ( (n = Readn(sockfd, &from_cli, sizeof(from_cli))) == 0)
 			return;         /* connection closed by other end */
 
-		gettime(&clk, ctime_buf);
-		fprintf(tunLogPtr,"%s %s: ***Received message %d from destination DTN...***\n", ctime_buf, phase2str(current_phase), ntohl(from_cli.len));
-		fflush(tunLogPtr);
-		printf("arg len = %d, arg buf = %s", ntohl(from_cli.len), from_cli.msg);
+		if (vDebugLevel > 1)
+		{
+			gettime(&clk, ctime_buf);
+			fprintf(tunLogPtr,"%s %s: ***Received message %d from destination DTN...***\n", ctime_buf, phase2str(current_phase), ntohl(from_cli.len));
+			fprintf(tunLogPtr,"%s %s: ***arg len = %d, arg buf = %s", ctime_buf, phase2str(current_phase), ntohl(from_cli.len), from_cli.msg);
+			fflush(tunLogPtr);
+		}
 	}
 }
 
@@ -2144,10 +2139,14 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 
 				char *peeraddrpresn = inet_ntoa(peeraddr.sin_addr);
 
-				fprintf(tunLogPtr,"%s %s: ***Peer information:***\n", ctime_buf, phase2str(current_phase));
-				fprintf(tunLogPtr,"%s %s: ***Peer Address Family: %d***\n", ctime_buf, phase2str(current_phase), peeraddr.sin_family);
-				fprintf(tunLogPtr,"%s %s: ***Peer Port: %d***\n", ctime_buf, phase2str(current_phase), peeraddr.sin_port);
-				fprintf(tunLogPtr,"%s %s: ***Peer IP Address: %s***\n", ctime_buf, phase2str(current_phase), peeraddrpresn);
+				if (vDebugLevel > 1)
+				{
+					fprintf(tunLogPtr,"%s %s: ***Peer information:\n", ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***Peer Address Family: %d\n", ctime_buf, phase2str(current_phase), peeraddr.sin_family);
+					fprintf(tunLogPtr,"%s %s: ***Peer Port: %d\n", ctime_buf, phase2str(current_phase), peeraddr.sin_port);
+					fprintf(tunLogPtr,"%s %s: ***Peer IP Address: %s***\n\n", ctime_buf, phase2str(current_phase), peeraddrpresn);
+				}
+
 				vIamASrcDtn = 1;	
 				strcpy(aDest_Ip2,peeraddrpresn);
 			}
@@ -2161,10 +2160,14 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 			{
 				char *localaddrpresn = inet_ntoa(localaddr.sin_addr);
 
-				fprintf(tunLogPtr,"%s %s: ***Socket information:\n", ctime_buf, phase2str(current_phase));
-				fprintf(tunLogPtr,"%s %s: ***Local Address Family: %d\n", ctime_buf, phase2str(current_phase), localaddr.sin_family);
-				fprintf(tunLogPtr,"%s %s: ***Local Port: %d\n", ctime_buf, phase2str(current_phase), ntohs(localaddr.sin_port));
-				fprintf(tunLogPtr,"%s %s: ***Local IP Address: %s\n\n", ctime_buf, phase2str(current_phase), localaddrpresn);
+				if (vDebugLevel > 1)
+				{
+					fprintf(tunLogPtr,"%s %s: ***Socket information:\n", ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***Local Address Family: %d\n", ctime_buf, phase2str(current_phase), localaddr.sin_family);
+					fprintf(tunLogPtr,"%s %s: ***Local Port: %d\n", ctime_buf, phase2str(current_phase), ntohs(localaddr.sin_port));
+					fprintf(tunLogPtr,"%s %s: ***Local IP Address: %s***\n\n", ctime_buf, phase2str(current_phase), localaddrpresn);
+				}
+
 				strcpy(aLocal_Ip,localaddrpresn);
 			}
 
