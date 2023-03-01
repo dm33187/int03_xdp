@@ -86,6 +86,7 @@ static double vGoodBitrateValue = 0.0;
 struct args test;
 char aSrc_Ip[32];
 char aDest_Ip2[32];
+char aLocal_Ip[32];
 
 union uIP {
 	 __u32 y;
@@ -344,6 +345,8 @@ void * fDoRunBpfCollectionPerfEventArray2(void * vargp)
 	memset (&sStartTimer,0,sizeof(struct itimerspec));
 	memset (&sDisableTimer,0,sizeof(struct itimerspec));
 
+	gettime(&clk, ctime_buf);
+
 	timerRc = makeTimer("qOCC_Hop_TimerID", &qOCC_Hop_TimerID, gInterval);
 	if (timerRc)
 	{
@@ -601,6 +604,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
                 {
 			new_traffic = 0;
 			src_ip_addr.y = ntohl(hop_key.flow_key.src_ip);
+			gettime(&clk, ctime_buf);
 			fprintf(tunLogPtr, "%s %s: ***new traffic???***\n", ctime_buf, phase2str(current_phase));
                         Pthread_mutex_lock(&dtn_mutex);
                         strcpy(test.msg, "Hello there!!!\n");
@@ -1090,6 +1094,8 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 	gettime(&clk, ctime_buf);
 	if (average_tx_Gbits_per_sec < vGoodBitrateValue)
 	{
+		fprintf(tunLogPtr,"%s %s: average_tx_Gbits_per_sec = %.2f Gb/s, vGoodBitrateValue Gb/s = %.2f \n",ctime_buf, phase2str(current_phase), average_tx_Gbits_per_sec, vGoodBitrateValue);
+		fflush(tunLogPtr);
 
 		if (current_phase == TUNING)
 		{
@@ -1141,7 +1147,12 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 							fprintf(tunLogPtr, "%s %s: ***CURRENT TUNING***: %s*",ctime_buf, phase2str(current_phase), buffer);
 							fprintf(tunLogPtr, "%s %s: *** Current Tuning of net.ipv4.tcp_wmem appears sufficient***\n", ctime_buf, phase2str(current_phase));
 							fprintf(tunLogPtr, "%s %s: !!!*****HOWEVER BITRATE IS LOW********!!!\n", ctime_buf, phase2str(current_phase));
-							fprintf(tunLogPtr, "%s %s: !!!*****PLEASE CHECK IF MTU of %s is correct or MTU of VLANS are correct********!!!\n", ctime_buf, phase2str(current_phase), netDevice);
+							if (aLocal_Ip[0])
+								fprintf(tunLogPtr, "%s %s: !!!*****PLEASE CHECK IF MTU of device \"%s\" is correct or MTU of LAN with ip address %s is correct********!!!\n", 
+										ctime_buf, phase2str(current_phase), netDevice, aLocal_Ip);
+							else
+								fprintf(tunLogPtr, "%s %s: !!!*****PLEASE CHECK IF MTU of device \"%s\" is correct or MTU of VLANS on %s are correct********!!!\n", 
+										ctime_buf, phase2str(current_phase), netDevice, netDevice);
 						}
 						
 						*nothing_done = 1;
@@ -1224,7 +1235,12 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 								fprintf(tunLogPtr, "%s %s: ***CURRENT TUNING***: %s*",ctime_buf, phase2str(current_phase), buffer);
 								fprintf(tunLogPtr, "%s %s: *** Current Tuning of net.ipv4.tcp_wmem appears sufficient***\n", ctime_buf, phase2str(current_phase));
 								fprintf(tunLogPtr, "%s %s: !!!*****HOWEVER BITRATE IS LOW********!!!\n", ctime_buf, phase2str(current_phase));
-								fprintf(tunLogPtr, "%s %s: !!!*****PLEASE CHECK IF MTU of %s is correct or MTU of VLANS are correct********!!!\n", ctime_buf, phase2str(current_phase), netDevice);
+								if (aLocal_Ip[0])
+									fprintf(tunLogPtr, "%s %s: !!!*****PLEASE CHECK IF MTU of device \"%s\" is correct or MTU of LAN with ip address %s is correct********!!!\n", 
+											ctime_buf, phase2str(current_phase), netDevice, aLocal_Ip);
+								else
+									fprintf(tunLogPtr, "%s %s: !!!*****PLEASE CHECK IF MTU of device \"%s\" is correct or MTU of VLANS on %s are correct********!!!\n", 
+											ctime_buf, phase2str(current_phase), netDevice, netDevice);
 							}
 						}
 						else
@@ -2086,7 +2102,11 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 #if 1
 			struct sockaddr_in peeraddr;
 			socklen_t peeraddrlen;
+			struct sockaddr_in localaddr;
+			socklen_t localaddrlen;
+
 			peeraddrlen = sizeof(peeraddr);
+			localaddrlen = sizeof(localaddr);
 #endif
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: ***Starting Listener for receiving messages from destination DTN...***\n", ctime_buf, phase2str(current_phase));
@@ -2128,10 +2148,27 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 				fprintf(tunLogPtr,"%s %s: ***Peer Address Family: %d***\n", ctime_buf, phase2str(current_phase), peeraddr.sin_family);
 				fprintf(tunLogPtr,"%s %s: ***Peer Port: %d***\n", ctime_buf, phase2str(current_phase), peeraddr.sin_port);
 				fprintf(tunLogPtr,"%s %s: ***Peer IP Address: %s***\n", ctime_buf, phase2str(current_phase), peeraddrpresn);
-				fflush(tunLogPtr);
 				vIamASrcDtn = 1;	
 				strcpy(aDest_Ip2,peeraddrpresn);
 			}
+
+			retval = getsockname(connfd, (struct sockaddr *) &localaddr, &localaddrlen);
+			if (retval == -1) 
+			{
+				fprintf(tunLogPtr,"%s %s: ***sock error:***\n", ctime_buf, phase2str(current_phase));
+			}
+			else
+			{
+				char *localaddrpresn = inet_ntoa(localaddr.sin_addr);
+
+				fprintf(tunLogPtr,"%s %s: ***Socket information:\n", ctime_buf, phase2str(current_phase));
+				fprintf(tunLogPtr,"%s %s: ***Local Address Family: %d\n", ctime_buf, phase2str(current_phase), localaddr.sin_family);
+				fprintf(tunLogPtr,"%s %s: ***Local Port: %d\n", ctime_buf, phase2str(current_phase), ntohs(localaddr.sin_port));
+				fprintf(tunLogPtr,"%s %s: ***Local IP Address: %s\n\n", ctime_buf, phase2str(current_phase), localaddrpresn);
+				strcpy(aLocal_Ip,localaddrpresn);
+			}
+
+			fflush(tunLogPtr);
 #endif
         	
 		if ( (childpid = Fork()) == 0) 
@@ -2356,10 +2393,11 @@ int main(int argc, char **argv)
 	memset(sFlowCounters,0,sizeof(sFlowCounters));
 	memset(aSrc_Ip,0,sizeof(aSrc_Ip));
 	memset(aDest_Ip2,0,sizeof(aDest_Ip2));
+	memset(aLocal_Ip,0,sizeof(aLocal_Ip));
 	src_ip_addr.y = 0;
 
-	vGoodBitrateValue = ((90/(double)100) * netDeviceSpeed); //90% of NIC speed must be a good bitrate
-	fprintf(tunLogPtr, "%s %s: ***vGoodBitrateValue = %.1f***\n", ctime_buf, phase2str(current_phase), vGoodBitrateValue);
+	vGoodBitrateValue = (((90/(double)100) * netDeviceSpeed)/(double)1000); //90% of NIC speed must be a good bitrate
+	fprintf(tunLogPtr, "%s %s: ***vGoodBitrateValue = %.1fGb/s***\n", ctime_buf, phase2str(current_phase), vGoodBitrateValue);
 	fprintf(tunLogPtr, "%s %s: ***Numa Node for %s is %d***\n", ctime_buf, phase2str(current_phase), netDevice, numaNode);
 	if (numaNodeString[0])
 	{
