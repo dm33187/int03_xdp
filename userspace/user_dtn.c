@@ -26,6 +26,7 @@
 FILE * tunLogPtr = 0;
 FILE * csvLogPtr = 0;
 
+char *pLearningSpaces = "                                    ";
 void gettime(time_t *clk, char *ctime_buf)
 {
 	*clk = time(NULL);
@@ -60,6 +61,8 @@ static int rx_traffic = 0;
 static time_t now_time = 0;
 static time_t last_time = 0;
 static  int vIamASrcDtn = 0;
+static double rtt_threshold = 2.0;
+static int rtt_factor = 4;
 time_t calculate_delta_for_csv(void);
 time_t calculate_delta_for_csv(void)
 {
@@ -906,6 +909,46 @@ void check_req(http_s *h, char aResp[])
 		goto after_check;
 	}
 			
+	if (strstr(pReqData,"GET /-rtt#thresh#"))
+	{
+		/* Change the value of the flow latency delta */
+		int vNewRttThreshold = 0;
+		char *p = (pReqData + sizeof("GET /-rtt#thresh#")) - 1;
+		while (isdigit(*p))
+		{
+			aNumber[count++] = *p;
+			p++;
+		}
+
+		vNewRttThreshold = strtoul(aNumber, (char **)0, 10);
+		sprintf(aResp,"Changed rtt threshold from %.2fms to %.2fms!\n", rtt_threshold, vNewRttThreshold*1.0);
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change rtt threshold from %.2fms to %.2fms***\n", ctime_buf, phase2str(current_phase), rtt_threshold, vNewRttThreshold*1.0);
+		rtt_threshold = vNewRttThreshold;
+		fprintf(tunLogPtr,"%s %s: ***New RTT THRESHOLD value is *%.2fms***\n", ctime_buf, phase2str(current_phase), rtt_threshold);
+		goto after_check;
+	}
+
+	if (strstr(pReqData,"GET /-rtt#factor#"))
+	{
+		/* Change the value of the flow latency delta */
+		int vNewRttFactor = 0;
+		char *p = (pReqData + sizeof("GET /-rtt#factor#")) - 1;
+		while (isdigit(*p))
+		{
+			aNumber[count++] = *p;
+			p++;
+		}
+
+		vNewRttFactor = strtoul(aNumber, (char **)0, 10);
+		sprintf(aResp,"Changed rtt factor from %d to %d!\n", rtt_factor, vNewRttFactor);
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change rtt factor from %d to %d***\n", ctime_buf, phase2str(current_phase), rtt_factor, vNewRttFactor);
+		rtt_factor = vNewRttFactor;
+		fprintf(tunLogPtr,"%s %s: ***New RTT FACTOR value is *%d***\n", ctime_buf, phase2str(current_phase), rtt_factor);
+		goto after_check;
+	}
+
 	if (strstr(pReqData,"GET /-b#rx#"))
 	{
 		/* Change rx ring buffer size */
@@ -1066,6 +1109,116 @@ void * fDoRunHttpServer(void * vargp)
 	return ((char *)0);
 }
 
+void fGetMtuInfoOfDevices(void)
+{
+
+	time_t clk;
+	char ctime_buf[27];
+	char log_inter[128];
+        char buffer[128];
+        char buffer2[128];
+	FILE *pipe1, *pipe2, *pipe3;
+	char try[1024];
+	char * foundstr = 0;
+	int found = 0;
+
+	memset(log_inter,0,128);
+	sprintf(try,"ip route | grep %s", aLocal_Ip);
+
+	pipe1 = popen(try,"r");
+	if (!pipe1)
+	{
+		printf("popen failed!\n");
+		return;
+	}
+
+	while (!feof(pipe1))
+	{
+		// use buffer to read and add to result
+		if (fgets(buffer, 128, pipe1) != NULL);
+		else
+			{
+				goto finish_up;
+			}
+
+		foundstr = strstr(buffer,"dev");
+		//should look like example: "10.35.1.0/24 dev vlan3501 proto kernel scope link src 10.35.1.1 advmss 9164"
+		if (foundstr)
+		{
+			foundstr = strchr(foundstr,' ');
+			if (foundstr)
+			{
+				char * q = 0;
+				foundstr++; //move up one to get to actual device name
+				q = strchr(foundstr,' ');
+				if (q)
+				{
+					strncpy(log_inter,foundstr,q-foundstr);
+					found = 1;
+					break;
+				}
+			}
+		}
+		else
+			continue;
+	}
+
+finish_up:
+	pclose(pipe1);
+	if (found)
+	{
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr, "%s!!!*****PLEASE CHECK IF MTU of Physical Interface \"%s\" is correct or MTU of Interface \"%s\" is correct********!!!\n",
+			pLearningSpaces, netDevice, log_inter);
+		
+		sprintf(try,"cat /sys/class/net/%s/mtu", log_inter);
+
+		pipe2 = popen(try,"r");
+		if (!pipe2)
+		{
+			printf("popen failed!\n");
+			return;
+		}
+		if (fgets(buffer, 128, pipe2) != NULL);
+		else
+			{
+				pclose(pipe2);
+				return;
+			}
+
+		pclose(pipe2);		
+
+
+		fprintf(tunLogPtr, "%s!!!***** MTU of %s is %s", pLearningSpaces, log_inter, buffer);
+		
+		sprintf(try,"cat /sys/class/net/%s/mtu", netDevice);
+
+		pipe3 = popen(try,"r");
+		if (!pipe3)
+		{
+			printf("popen failed!\n");
+			return;
+		}
+		if (fgets(buffer2, 128, pipe3) != NULL);
+		else
+			{
+				pclose(pipe3);
+				return;
+			}
+
+		pclose(pipe3);		
+		
+		fprintf(tunLogPtr, "%s!!!***** MTU of %s is %s", pLearningSpaces, netDevice, buffer2);
+
+		if(strcmp(buffer, buffer2) != 0)
+			fprintf(tunLogPtr, "%s!!!***** WARNING ***** ABOVE MTUs are NOT the same*****!!!\n", pLearningSpaces);
+
+		fflush(tunLogPtr);
+        }
+
+return;
+}
+
 #define BITRATE_INTERVAL 5
 #define KTUNING_DELTA	200000
 extern int my_tune_max;
@@ -1139,13 +1292,6 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 							//don't apply - just log suggestions - decided to use a debug level here because this file could fill up if user never accepts recommendation
 							fprintf(tunLogPtr, "%s %s: ***CURRENT TUNING***: %s*",ctime_buf, phase2str(current_phase), buffer);
 							fprintf(tunLogPtr, "%s %s: *** Current Tuning of net.ipv4.tcp_wmem appears sufficient***\n", ctime_buf, phase2str(current_phase));
-							fprintf(tunLogPtr, "%s %s: !!!*****HOWEVER BITRATE IS LOW********!!!\n", ctime_buf, phase2str(current_phase));
-							if (aLocal_Ip[0])
-								fprintf(tunLogPtr, "%s %s: !!!*****PLEASE CHECK IF MTU of device \"%s\" is correct or MTU of LAN with ip address %s is correct********!!!\n", 
-										ctime_buf, phase2str(current_phase), netDevice, aLocal_Ip);
-							else
-								fprintf(tunLogPtr, "%s %s: !!!*****PLEASE CHECK IF MTU of device \"%s\" is correct or MTU of VLANS on %s are correct********!!!\n", 
-										ctime_buf, phase2str(current_phase), netDevice, netDevice);
 						}
 						
 						*nothing_done = 1;
@@ -1227,13 +1373,6 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 								//don't apply - just log suggestions - decided to use a debug level here because this file could fill up if user never accepts recommendation
 								fprintf(tunLogPtr, "%s %s: ***CURRENT TUNING***: %s*",ctime_buf, phase2str(current_phase), buffer);
 								fprintf(tunLogPtr, "%s %s: *** Current Tuning of net.ipv4.tcp_wmem appears sufficient***\n", ctime_buf, phase2str(current_phase));
-								fprintf(tunLogPtr, "%s %s: !!!*****HOWEVER BITRATE IS LOW********!!!\n", ctime_buf, phase2str(current_phase));
-								if (aLocal_Ip[0])
-									fprintf(tunLogPtr, "%s %s: !!!*****PLEASE CHECK IF MTU of device \"%s\" is correct or MTU of LAN with ip address %s is correct********!!!\n", 
-											ctime_buf, phase2str(current_phase), netDevice, aLocal_Ip);
-								else
-									fprintf(tunLogPtr, "%s %s: !!!*****PLEASE CHECK IF MTU of device \"%s\" is correct or MTU of VLANS on %s are correct********!!!\n", 
-											ctime_buf, phase2str(current_phase), netDevice, netDevice);
 							}
 						}
 						else
@@ -1248,6 +1387,15 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 							}
 					}
 			}
+		
+		if (vDebugLevel > 0)
+		{
+			fprintf(tunLogPtr, "%s %s: !!!*****BITRATE IS LOW********!!!\n", ctime_buf, phase2str(current_phase));
+			if (aLocal_Ip[0])
+				fGetMtuInfoOfDevices();
+			else
+				fprintf(tunLogPtr, "%s!!!*****PLEASE CHECK IF MTU of device \"%s\" is correct or MTU of VLANS on %s are correct********!!!\n", pLearningSpaces, netDevice, netDevice);
+		}
 	}
         
 	fflush(tunLogPtr);
@@ -1590,9 +1738,9 @@ return ((char *) 0);
 
 
 //Measured in milliseconds
-#define RTT_THRESHOLD	50 
-void fDoManageRtt(double average_tx_Gbits_per_sec, int * applied, int * suggested, int * nothing_done, int * tune, char aApplyDefTun[MAX_SIZE_SYSTEM_SETTING_STRING]);
-void fDoManageRtt(double average_tx_Gbits_per_sec, int * applied, int * suggested, int * nothing_done, int * tune, char aApplyDefTun[MAX_SIZE_SYSTEM_SETTING_STRING])
+#define RTT_THRESHOLD	2 
+void fDoManageRtt(double highest_rtt_ms, int * applied, int * suggested, int * nothing_done, int * tune, char aApplyDefTun[MAX_SIZE_SYSTEM_SETTING_STRING], int from_bpftrace);
+void fDoManageRtt(double highest_rtt_ms, int * applied, int * suggested, int * nothing_done, int * tune, char aApplyDefTun[MAX_SIZE_SYSTEM_SETTING_STRING], int from_bpftrace)
 {
 	time_t clk;
 	char ctime_buf[27];
@@ -1603,12 +1751,18 @@ void fDoManageRtt(double average_tx_Gbits_per_sec, int * applied, int * suggeste
 	unsigned int  kminimum;
 	int kdefault;
 	unsigned int kmaximum;
-
-	gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr, "%s %s: *** In fDoManageRtt(). Must have hit some RTT threshold. Returning for now...***\n", ctime_buf, phase2str(current_phase));
+	double average_tx_Gbits_per_sec = 2000.00;
 
 	return;
 
+	gettime(&clk, ctime_buf);
+	if (from_bpftrace)
+		fprintf(tunLogPtr, "%s %s: *** WARNING**** RTT from *BPFTRACE* is ABOVE THRESHOLD***** WARNING****!!!! RTT is  %.3fms, threshold is %f ***\n", ctime_buf, phase2str(current_phase), highest_rtt_ms, rtt_threshold);
+	else
+		fprintf(tunLogPtr, "%s %s: *** WARNING**** RTT from *PING* is ABOVE THRESHOLD***** WARNING****!!!! RTT is  %.3fms, threshold is %f ***\n", ctime_buf, phase2str(current_phase), highest_rtt_ms, rtt_threshold);
+
+
+	//remember average_tx_Gbits_per_sec is a bogus value
 	if (average_tx_Gbits_per_sec < vGoodBitrateValue)
 	{
 		if (current_phase == TUNING)
@@ -1739,7 +1893,7 @@ void fDoManageRtt(double average_tx_Gbits_per_sec, int * applied, int * suggeste
 return;
 }
 
-int fFindRttUsingPing()
+double fFindRttUsingPing()
 {
 	time_t clk;
 	char ctime_buf[27];
@@ -1766,7 +1920,7 @@ int fFindRttUsingPing()
 	{
 		printf("popen failed!\n");
 		printf("here2***\n");
-		return -1;
+		return 0;
 	}
 
 	while (!feof(pipe))
@@ -1816,11 +1970,11 @@ finish_up:
 	{
 		gettime(&clk, ctime_buf);
 		fprintf(tunLogPtr,"%s %s: ***Average RTT using ping is %.3fms\n", ctime_buf, phase2str(current_phase), avg_rtt_ping);
-		fflush(tunLogPtr);
 	}
-	sleep(1);
+		
+	fflush(tunLogPtr);
 
-return 0;
+return avg_rtt_ping;
 }
 
 void * fDoRunFindHighestRtt(void * vargp)
@@ -1832,9 +1986,10 @@ void * fDoRunFindHighestRtt(void * vargp)
 	char try[1024];
 	char aApplyDefTunBest[MAX_SIZE_SYSTEM_SETTING_STRING];
 	long rtt = 0, highest_rtt = 0;
+	double highest_rtt_from_bpftrace = 0.0;
+	double highest_rtt_from_ping = 0.0;
 	int applied = 0, suggested = 0, nothing_done = 0;
 	int tune = 1; //1 = up, 2 = down - tune up initially
-	int vRet;
 
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: ***Starting Finding Highest RTT thread ...***\n", ctime_buf, phase2str(current_phase));
@@ -1846,7 +2001,8 @@ rttstart:
 
 	if (vDebugLevel > 1 && previous_average_tx_Gbits_per_sec && vIamASrcDtn)
 	{
-		vRet = fFindRttUsingPing();
+		sleep(1);
+		highest_rtt_from_ping = fFindRttUsingPing();
 	}
 
 	rtt = 0;
@@ -1892,15 +2048,30 @@ finish_up:
 
 	if (highest_rtt)
 	{
+		highest_rtt_from_bpftrace = highest_rtt/(double)1000;
 		if (vDebugLevel > 1 && previous_average_tx_Gbits_per_sec)
 		{
 			gettime(&clk, ctime_buf);
-			fprintf(tunLogPtr,"%s %s: ***Highest RTT using bpftrace is %.3fms\n", ctime_buf, phase2str(current_phase), highest_rtt/(double)1000);
+			fprintf(tunLogPtr,"%s %s: ***Highest RTT using bpftrace is %.3fms\n", ctime_buf, phase2str(current_phase), highest_rtt_from_bpftrace);
 			fflush(tunLogPtr);
 		}
 
-		if (highest_rtt/1000 >= RTT_THRESHOLD)
-			fDoManageRtt(highest_rtt/1000, &applied, &suggested, &nothing_done, &tune, aApplyDefTunBest);
+		if (((highest_rtt_from_ping > rtt_threshold) || (highest_rtt_from_bpftrace > rtt_threshold)) &&
+		    (((rtt_factor * highest_rtt_from_ping) <= highest_rtt_from_bpftrace) || ((rtt_factor * highest_rtt_from_bpftrace) <= highest_rtt_from_ping))
+		   )
+		{
+			fprintf(tunLogPtr,"%s %s: !!!***WARNING: RTT from bpftrace and ping differs by a factor of %d and at least 1 is above the threshold of %.2fms***\n", 
+					ctime_buf, phase2str(current_phase), rtt_factor, rtt_threshold);
+			fprintf(tunLogPtr,"%s!!!**RTT from bpftrace is %.3fms\n", pLearningSpaces, highest_rtt_from_bpftrace);
+			fprintf(tunLogPtr,"%s!!!**RTT from ping is %.3fms\n", pLearningSpaces, highest_rtt_from_ping);
+			fflush(tunLogPtr);
+			//leave line below in for now			
+			fDoManageRtt(highest_rtt_from_bpftrace, &applied, &suggested, &nothing_done, &tune, aApplyDefTunBest, 1); //1 is from bpftrace
+		}
+#if 0	
+		if (highest_rtt_from_ping >= RTT_THRESHOLD)
+			fDoManageRtt(highest_rtt_from_ping, &applied, &suggested, &nothing_done, &tune, aApplyDefTunBest, 0); //0 is from ping
+#endif
 	}
 
 	if (vDebugLevel > 5 && previous_average_tx_Gbits_per_sec)
@@ -2137,15 +2308,16 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 				err_sys("accept error");
 		}
 #if 1
-			int retval = getpeername(connfd, (struct sockaddr *) &peeraddr, &peeraddrlen);
-			if (retval == -1) 
-			{
-				fprintf(tunLogPtr,"%s %s: ***Peer error:***\n", ctime_buf, phase2str(current_phase));
-			//	perror("getpeername()");
-			}
-			else
-			{
+		gettime(&clk, ctime_buf);
 
+		int retval = getpeername(connfd, (struct sockaddr *) &peeraddr, &peeraddrlen);
+		if (retval == -1) 
+		{
+			fprintf(tunLogPtr,"%s %s: ***Peer error:***\n", ctime_buf, phase2str(current_phase));
+		//	perror("getpeername()");
+		}
+		else
+			{
 				char *peeraddrpresn = inet_ntoa(peeraddr.sin_addr);
 
 				if (vDebugLevel > 1)
@@ -2160,12 +2332,12 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 				strcpy(aDest_Ip2,peeraddrpresn);
 			}
 
-			retval = getsockname(connfd, (struct sockaddr *) &localaddr, &localaddrlen);
-			if (retval == -1) 
-			{
-				fprintf(tunLogPtr,"%s %s: ***sock error:***\n", ctime_buf, phase2str(current_phase));
-			}
-			else
+		retval = getsockname(connfd, (struct sockaddr *) &localaddr, &localaddrlen);
+		if (retval == -1) 
+		{
+			fprintf(tunLogPtr,"%s %s: ***sock error:***\n", ctime_buf, phase2str(current_phase));
+		}
+		else
 			{
 				char *localaddrpresn = inet_ntoa(localaddr.sin_addr);
 
@@ -2180,7 +2352,7 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 				strcpy(aLocal_Ip,localaddrpresn);
 			}
 
-			fflush(tunLogPtr);
+		fflush(tunLogPtr);
 #endif
         	
 		if ( (childpid = Fork()) == 0) 
