@@ -12,11 +12,13 @@ static char * Usage = "This is an HTTP client to talk to Tuning Module. \
 		       \nUse \"tuncli -b tx [value]\" to change TX ring buffer size of the NIC. \
 		       \nUse \"tuncli -b sock_rx_buff [value]\" to change the maximum OS receive buffer size for all types of connections. \
 		       \nUse \"tuncli -b sock_tx_buff [value]\" to change the maximum OS send buffer size for all types of connections. \
-		       \nUse \"tuncli -d [value]\" to change the debug value of the Tuning Module. Values range from 0 to 4. \
+		       \nUse \"tuncli -d [value]\" to change the debug value of the Tuning Module. Values range from 0 to 7. \
 		       \nUse \"tuncli -ct hop_late [value]\" to change the value of the hop latency delta. \
 		       \nUse \"tuncli -ct flow_late [value]\" to change the value of the flow latency delta. \
 		       \nUse \"tuncli -ct q_occ [value]\" to change the value of the queue occupancy delta. \
-		       \nUse \"tuncli -ct flow_sink [value]\" to change the value of the flow sink time delta.\n";
+		       \nUse \"tuncli -ct flow_sink [value]\" to change the value of the flow sink time delta. \
+		       \nUse \"tuncli -rtt thresh [value]\" to change the value of the rtt threshold. \
+		       \nUse \"tuncli -rtt factor [value]\" to change the value of the rtt factor.\n";
 
 int main(int argc, const char *argv[]) 
 {
@@ -46,7 +48,7 @@ int main(int argc, const char *argv[])
 		goto carry_on;
 	}
 	else
-		if (((strcmp(argv[1],"-b") == 0) || (strcmp(argv[1],"-ct") == 0)) && argc == 4)
+		if (((strcmp(argv[1],"-b") == 0) || (strcmp(argv[1],"-ct") == 0) || (strcmp(argv[1],"-rtt") == 0)) && argc == 4)
 		{
 			sprintf(aSecondPart,"%s#%s#%s",argv[1], argv[2],argv[3]);
 			goto carry_on;
