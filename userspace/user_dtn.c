@@ -1993,7 +1993,6 @@ void * fDoRunFindHighestRtt(void * vargp)
 
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"%s %s: ***Starting Finding Highest RTT thread ...***\n", ctime_buf, phase2str(current_phase));
-	fflush(tunLogPtr);
         
 	sprintf(try,"sudo bpftrace -e \'BEGIN { @ca_rtt_us;} kprobe:tcp_ack_update_rtt { @ca_rtt_us = arg4; } kretprobe:tcp_ack_update_rtt /pid != 0/ { printf(\"%s\\n\", @ca_rtt_us); } interval:ms:125 {  exit(); } END { clear(@ca_rtt_us); }\'", "%ld");
 
@@ -2053,18 +2052,20 @@ finish_up:
 		{
 			gettime(&clk, ctime_buf);
 			fprintf(tunLogPtr,"%s %s: ***Highest RTT using bpftrace is %.3fms\n", ctime_buf, phase2str(current_phase), highest_rtt_from_bpftrace);
-			fflush(tunLogPtr);
 		}
 
 		if (((highest_rtt_from_ping > rtt_threshold) || (highest_rtt_from_bpftrace > rtt_threshold)) &&
 		    (((rtt_factor * highest_rtt_from_ping) <= highest_rtt_from_bpftrace) || ((rtt_factor * highest_rtt_from_bpftrace) <= highest_rtt_from_ping))
 		   )
 		{
-			fprintf(tunLogPtr,"%s %s: !!!***WARNING: RTT from bpftrace and ping differs by a factor of %d and at least 1 is above the threshold of %.2fms***\n", 
-					ctime_buf, phase2str(current_phase), rtt_factor, rtt_threshold);
-			fprintf(tunLogPtr,"%s!!!**RTT from bpftrace is %.3fms\n", pLearningSpaces, highest_rtt_from_bpftrace);
-			fprintf(tunLogPtr,"%s!!!**RTT from ping is %.3fms\n", pLearningSpaces, highest_rtt_from_ping);
-			fflush(tunLogPtr);
+			if (vDebugLevel > 0)
+			{
+				gettime(&clk, ctime_buf);
+				fprintf(tunLogPtr,"%s %s: !!!***WARNING: RTT from bpftrace and ping differs by a factor of %d and at least 1 is above the threshold of %.2fms***\n", 
+						ctime_buf, phase2str(current_phase), rtt_factor, rtt_threshold);
+				fprintf(tunLogPtr,"%s!!!**RTT from bpftrace is %.3fms\n", pLearningSpaces, highest_rtt_from_bpftrace);
+				fprintf(tunLogPtr,"%s!!!**RTT from ping is %.3fms\n", pLearningSpaces, highest_rtt_from_ping);
+			}
 			//leave line below in for now			
 			fDoManageRtt(highest_rtt_from_bpftrace, &applied, &suggested, &nothing_done, &tune, aApplyDefTunBest, 1); //1 is from bpftrace
 		}
@@ -2078,9 +2079,9 @@ finish_up:
 	{
 		gettime(&clk, ctime_buf);
 		fprintf(tunLogPtr, "%s %s: ***Sleeping for %d microseconds before resuming RTT checking...\n", ctime_buf, phase2str(current_phase), gInterval);
-		fflush(tunLogPtr);
 	}
 
+	fflush(tunLogPtr);
 	my_usleep(gInterval); //sleeps in microseconds	
 	goto rttstart;
 
