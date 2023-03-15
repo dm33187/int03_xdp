@@ -1903,7 +1903,7 @@ double fDoCpuMonitoring()
 	char * foundstr;
 	int found = 0;
 	int ridtwolines = 0;
-	int static nompstat = 0;
+	static int nompstat = 0;
 
 	if (nompstat)
 		return 0;
