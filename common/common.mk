@@ -55,6 +55,7 @@ LIBS = -l:libbpf.a -lelf -lz -lrt $(USER_LIBS)
 
 all: llvm-check $(USER_TARGETS) $(XDP_OBJ) $(COPY_LOADER) $(COPY_STATS)
 
+#.PHONY: clean $(CLANG) $(LLC)
 .PHONY: clean $(CLANG) $(LLC)
 
 clean:
@@ -82,7 +83,8 @@ endif
 # For build dependency on this file, if it gets updated
 COMMON_MK = $(COMMON_DIR)/common.mk
 
-llvm-check: $(CLANG) $(LLC)
+#llvm-check: $(CLANG) $(LLC)
+llvm-check: $(CLANG) 
 	@for TOOL in $^ ; do \
 		if [ ! $$(command -v $${TOOL} 2>/dev/null) ]; then \
 			echo "*** ERROR: Cannot find tool $${TOOL}" ;\
@@ -124,4 +126,4 @@ $(XDP_OBJ): %.o: %.c  Makefile $(COMMON_MK) $(KERN_USER_H) $(EXTRA_DEPS) $(OBJEC
 	    -Wno-compare-distinct-pointer-types \
 	    -Werror \
 	    -O2 -emit-llvm -c -g -o ${@:.o=.ll} $<
-	$(LLC) -march=bpf -filetype=obj -o $@ ${@:.o=.ll}
+#	$(LLC) -march=bpf -filetype=obj -o $@ ${@:.o=.ll}
