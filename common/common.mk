@@ -56,7 +56,7 @@ LIBS = -l:libbpf.a -lelf -lz -lrt $(USER_LIBS)
 all: llvm-check $(USER_TARGETS) $(XDP_OBJ) $(COPY_LOADER) $(COPY_STATS)
 
 #.PHONY: clean $(CLANG) $(LLC)
-.PHONY: clean $(CLANG) $(LLC)
+.PHONY: clean $(CLANG) 
 
 clean:
 	rm -rf $(LIBBPF_DIR)/build
