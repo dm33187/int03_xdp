@@ -1404,6 +1404,130 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 
 #define MAX_TUNING_APPLY	10
 static double previous_average_tx_Gbits_per_sec = 0.0;
+
+double fCheckAppBandwidth(char app[])
+{
+	time_t clk;
+	char ctime_buf[27];
+	gettime(&clk, ctime_buf);
+	char buffer[128];
+	FILE *pipe;
+	char try[1024];
+	unsigned long vBandWidthInBits = 0;
+	double vBandWidthInGBits = 0;
+
+	sprintf(try,"bpftrace -e \'BEGIN { zero(@size); zero(@sum); } kprobe:tcp_sendmsg /comm == \"%s\"/ { @size = arg2; } kretprobe:tcp_sendmsg /comm == \"%s\"/ { @sum = @sum + @size; } interval:ms:1008 { exit(); } END { printf(\"%s\", @sum); clear(@size); clear(@sum); }\'",app,app,"%lu");
+
+	pipe = popen(try,"r");
+	if (!pipe)
+	{
+		printf("popen failed!\n");
+		printf("here37***\n");
+		return 0;
+	}
+
+	while (!feof(pipe))
+	{
+		// use buffer to read and add to result
+		if (fgets(buffer, 256, pipe) != NULL); //don't need first line
+		else
+			break;
+		if (fgets(buffer, 256, pipe) != NULL)
+		{
+			sscanf(buffer,"%lu", &vBandWidthInBits); //next line
+			vBandWidthInBits = ((8 * vBandWidthInBits) / 1000);	//really became kilobits here
+			vBandWidthInGBits = vBandWidthInBits/(double)(1000000);
+			
+			gettime(&clk, ctime_buf);
+
+			fprintf(tunLogPtr,"%s %s: ***The app \"%s\" is using a Bandwidth of %.2f Gb/s\n", ctime_buf, phase2str(current_phase), app, vBandWidthInGBits); //only need this one buffer
+			while (fgets(buffer, 256, pipe) != NULL); //dump the buffers after
+			break;
+		}
+		else
+			break;
+	}
+
+	pclose(pipe);
+
+	fflush(tunLogPtr);
+return 0;
+}
+
+
+double fGetAppBandWidth()
+{
+
+	time_t clk;
+	char ctime_buf[27];
+	char buffer[256];
+	FILE *pipe;
+	char try[1024];
+	int found = 0;
+	static int nolsof = 0;
+	char * q = 0;
+	char value[256];
+	char previous_value[256];
+
+	if (nolsof)
+		return 0;
+
+	if (aDest_Ip2[0] == 0)
+	{
+		return 0; //didn't get  a message from the peer yet
+	}
+
+	strcpy(previous_value," ");
+	gettime(&clk, ctime_buf);
+
+	sprintf(try,"lsof | grep %s:",aDest_Ip2);
+
+	pipe = popen(try,"r");
+	if (!pipe)
+	{
+		printf("popen failed!\n");
+		printf("here17***\n");
+		return 0;
+	}
+
+	found = 1;
+
+	while (!feof(pipe))
+	{
+		// use buffer to read and add to result
+		if (fgets(buffer, 256, pipe) != NULL)
+		{
+			memset(value,0,256);
+			q = strchr(buffer,' ');
+			if (q)
+				strncpy(value,buffer,q-buffer);
+
+			if (q)
+			{
+				if (strcmp(previous_value,value) != 0)
+					fCheckAppBandwidth(value);
+				else
+					strcpy(previous_value,value);
+			}
+		}
+		else
+			break;
+	}
+
+	pclose(pipe);
+
+	if (!found)
+	{
+		nolsof = 1;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"\n%s %s: ***!!!ERROR!!!**** Could not find \"lsof\" to get App Bandwidth***\n", ctime_buf, phase2str(current_phase));
+	}
+
+	fflush(tunLogPtr);
+
+return found;
+}
+
 void * fDoRunGetThresholds(void * vargp)
 {
 	time_t clk;
@@ -1435,6 +1559,11 @@ void * fDoRunGetThresholds(void * vargp)
 	/*sprintf(try,"bpftrace -e \'BEGIN { @name;} kfunc:dev_get_stats { $nd = (struct net_device *) args->dev; @name = $nd->name; } kretfunc:dev_get_stats /@name == \"%s\"/ { $nd = (struct net_device *) args->dev; $rtnl = (struct rtnl_link_stats64 *) args->storage; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); time(\"%s\"); exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu","%S");*/
 
 start:
+	if (vDebugLevel > 2 && previous_average_tx_Gbits_per_sec && vIamASrcDtn)
+	{
+		fGetAppBandWidth();
+		sleep(1);
+	}
 #if 1
 	rx_before =  rx_now = rx_bytes_tot = rx_kbits_per_sec = 0;
 	tx_before =  tx_now = tx_bytes_tot = tx_kbits_per_sec = 0;
@@ -1528,7 +1657,7 @@ start:
 		//fprintf(tunLogPtr,"%s %s: DEV %s: TX : %.2f Gb/s RX : %.2f Gb/s\n", ctime_buf, phase2str(current_phase), netDevice, tx_kbits_per_sec/(double)(1048576), rx_kbits_per_sec/(double)(1048576));
 	}
 
-	if (vDebugLevel > 1 && average_tx_Gbits_per_sec)
+	if (vDebugLevel > 0 && average_tx_Gbits_per_sec)
 	{
 		if (!check_bitrate_interval)
 		{
@@ -1582,7 +1711,7 @@ start:
 				gettime(&clk, ctime_buf);
 				if (previous_average_tx_Gbits_per_sec)
 				{
-					if ((vDebugLevel > 2) &&  (highest_average_tx_Gbits_per_sec >= 1))
+					if ((vDebugLevel > 3) &&  (highest_average_tx_Gbits_per_sec >= 1))
 					{
 						fprintf(tunLogPtr,"%s %s: ***applied = %d, previous avg bitrate %.2f, highest avg bitrate= %.2f***\n", 
 								ctime_buf, phase2str(current_phase), applied, 
@@ -1665,7 +1794,7 @@ start:
 				else
 					if (nothing_done) //no change to tuning
 					{
-						if (vDebugLevel > 0)
+						if (vDebugLevel > 2)
 						{
 							fprintf(tunLogPtr, "%s %s: ***What is nothing_done??? and nothing_done is %d ...***\n", ctime_buf, phase2str(current_phase), nothing_done);
 						}
@@ -1918,6 +2047,7 @@ double fDoCpuMonitoring()
 		return 0;
 	}
 
+	
 	gettime(&clk, ctime_buf);
 	fprintf(tunLogPtr,"\n%s %s: ***Monitoring CPUs that are being utilized***\n", ctime_buf, phase2str(current_phase));
 
@@ -1969,9 +2099,12 @@ double fFindRttUsingPing()
 
 	if (aDest_Ip2[0] == 0)
 	{
-		gettime(&clk, ctime_buf);
-		fprintf(tunLogPtr,"%s %s: ***Waiting on Peer Ip address to Ping***\n", ctime_buf, phase2str(current_phase));
-		fflush(tunLogPtr);
+		if (vDebugLevel > 1)
+		{
+			gettime(&clk, ctime_buf);
+			fprintf(tunLogPtr,"%s %s: ***Waiting on Peer Ip address to Ping***\n", ctime_buf, phase2str(current_phase));
+			fflush(tunLogPtr);
+		}
 		return 0; //didn't get  a message from the peer yet
 	}
 	
@@ -1999,8 +2132,11 @@ double fFindRttUsingPing()
 		//should look like example: "rtt min/avg/max/mdev = 0.314/0.341/0.366/0.021 ms"
                 if (foundstr)
                 {
-			gettime(&clk, ctime_buf);
-			fprintf(tunLogPtr,"%s %s: ***using \"%s\" returns *%s", ctime_buf, phase2str(current_phase),try, buffer);
+			if (vDebugLevel > 1)
+			{
+				gettime(&clk, ctime_buf);
+				fprintf(tunLogPtr,"%s %s: ***using \"%s\" returns *%s", ctime_buf, phase2str(current_phase),try, buffer);
+			}
 			foundstr = strchr(foundstr,'=');
 			if (foundstr)
 			{
@@ -2031,8 +2167,11 @@ finish_up:
 	pclose(pipe);
 	if (found)
 	{
-		gettime(&clk, ctime_buf);
-		fprintf(tunLogPtr,"%s %s: ***Average RTT using ping is %.3fms\n", ctime_buf, phase2str(current_phase), avg_rtt_ping);
+		if (vDebugLevel > 1)
+		{
+			gettime(&clk, ctime_buf);
+			fprintf(tunLogPtr,"%s %s: ***Average RTT using ping is %.3fms\n", ctime_buf, phase2str(current_phase), avg_rtt_ping);
+		}
 	}
 		
 	fflush(tunLogPtr);
@@ -2061,16 +2200,18 @@ void * fDoRunFindHighestRtt(void * vargp)
 
 rttstart:
 
-	if (vDebugLevel > 1 && previous_average_tx_Gbits_per_sec)
+	if (previous_average_tx_Gbits_per_sec)
 	{
 		sleep(1);
 
 		if (vIamASrcDtn)
 			highest_rtt_from_ping = fFindRttUsingPing();
 
-		sleep(1);
-		fDoCpuMonitoring();	
-
+		if (vDebugLevel > 2) 
+		{
+			sleep(1);
+			fDoCpuMonitoring();	
+		}
 	}
 
 	rtt = 0;
