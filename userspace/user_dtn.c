@@ -2806,6 +2806,7 @@ int main(int argc, char **argv)
 
 	system("rm -f /tmp/facil-io-sock-*"); //clean up old facil-io links
 
+
 	//Start Collector Thread - collect from int-sink
 	vRetFromRunBpfThread = pthread_create(&doRunBpfCollectionThread_id, NULL, fDoRunBpfCollectionPerfEventArray2, &sArgv);
 	//Start Http server Thread	
