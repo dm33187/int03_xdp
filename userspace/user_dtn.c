@@ -2037,7 +2037,7 @@ double fDoCpuMonitoring()
 	if (nompstat)
 		return 0;
 
-	sprintf(try,"%s","mpstat -P ALL 1 1 | grep -v all | grep -v 100.00");
+	sprintf(try,"%s","mpstat -P ALL 1 1 | grep -v all | grep -v 100.00 | grep -v 99.");
 
 	pipe = popen(try,"r");
 	if (!pipe)
