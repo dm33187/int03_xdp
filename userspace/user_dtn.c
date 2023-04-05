@@ -2102,7 +2102,7 @@ double fDoCpuMonitoring()
 	if (!found)
 	{
 		nompstat = 1;
-		fprintf(tunLogPtr,"\n%s %s: ***!!!ERROR!!!**** Could not find \"mpstat\" to monitor CPUs***\n", ctime_buf, phase2str(current_phase));
+		fprintf(tunLogPtr,"\n%s %s: ***!!!!ERROR!!!**** Could not find \"mpstat\" to monitor CPUs***\n", ctime_buf, phase2str(current_phase));
 	}
 		
 	fflush(tunLogPtr);
