@@ -1429,10 +1429,10 @@ double fCheckAppBandwidth(char app[])
 	while (!feof(pipe))
 	{
 		// use buffer to read and add to result
-		if (fgets(buffer, 256, pipe) != NULL); //don't need first line
+		if (fgets(buffer, 128, pipe) != NULL); //don't need first line
 		else
 			break;
-		if (fgets(buffer, 256, pipe) != NULL)
+		if (fgets(buffer, 128, pipe) != NULL)
 		{
 			sscanf(buffer,"%lu", &vBandWidthInBits); //next line
 			vBandWidthInBits = ((8 * vBandWidthInBits) / 1000);	//really became kilobits here
@@ -1441,7 +1441,7 @@ double fCheckAppBandwidth(char app[])
 			gettime(&clk, ctime_buf);
 
 			fprintf(tunLogPtr,"%s %s: ***The app \"%s\" is using a Bandwidth of %.2f Gb/s\n", ctime_buf, phase2str(current_phase), app, vBandWidthInGBits); //only need this one buffer
-			while (fgets(buffer, 256, pipe) != NULL); //dump the buffers after
+			while (fgets(buffer, 128, pipe) != NULL); //dump the buffers after
 			break;
 		}
 		else
@@ -2027,6 +2027,8 @@ double fDoCpuMonitoring()
 	time_t clk;
 	char ctime_buf[27];
 	char buffer[128];
+	char header_buffer[128];
+	int count = 0;
 	FILE *pipe;
 	char try[1024];
 	char * foundstr;
@@ -2037,7 +2039,7 @@ double fDoCpuMonitoring()
 	if (nompstat)
 		return 0;
 
-	sprintf(try,"%s","mpstat -P ALL 1 1 | grep -v all | grep -v 100.00 | grep -v 99.");
+	sprintf(try,"%s","mpstat -P ALL 1 1 | grep -v all | grep -v 100.00 | grep -v 9[[:digit:]].");
 
 	pipe = popen(try,"r");
 	if (!pipe)
@@ -2049,7 +2051,6 @@ double fDoCpuMonitoring()
 
 	
 	gettime(&clk, ctime_buf);
-	fprintf(tunLogPtr,"\n%s %s: ***Monitoring CPUs that are being utilized***\n", ctime_buf, phase2str(current_phase));
 
 	while (!feof(pipe))
 	{
@@ -2066,7 +2067,30 @@ double fDoCpuMonitoring()
 				break;
 			}
 			else
-				fprintf(tunLogPtr,"%s%s", pLearningSpaces, buffer);					
+			{
+				//kind of a hack, but let's not print anything if  CPUs that we want doesn't exist!!!
+				if (count == 0)
+				{
+					strcpy(header_buffer,buffer);
+					count++;
+				}
+				else
+					if (count == 1)
+					{
+						if (buffer[0] != '\n')
+						{
+							//we have some CPUs that we want - catch up and print 
+							fprintf(tunLogPtr,"\n%s %s: ***Monitoring CPUs that are being utilized at least 10%c***\n", 
+													ctime_buf, phase2str(current_phase),'%');
+							fprintf(tunLogPtr,"%s%s", pLearningSpaces, header_buffer);
+							fprintf(tunLogPtr,"%s%s", pLearningSpaces, buffer);
+						}
+						
+						count++;
+					}
+					else
+						fprintf(tunLogPtr,"%s%s", pLearningSpaces, buffer);					
+			}
 
 		}
 		else
