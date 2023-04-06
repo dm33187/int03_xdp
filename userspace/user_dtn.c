@@ -1416,7 +1416,7 @@ double fCheckAppBandwidth(char app[])
 	unsigned long vBandWidthInBits = 0;
 	double vBandWidthInGBits = 0;
 
-	sprintf(try,"bpftrace -e \'BEGIN { zero(@size); zero(@sum); } kprobe:tcp_sendmsg /comm == \"%s\"/ { @size = arg2; } kretprobe:tcp_sendmsg /comm == \"%s\"/ { @sum = @sum + @size; } interval:ms:1008 { exit(); } END { printf(\"%s\", @sum); clear(@size); clear(@sum); }\'",app,app,"%lu");
+	sprintf(try,"bpftrace -e \'BEGIN { zero(@size); zero(@sum); } kprobe:tcp_sendmsg /comm == \"%s\"/ { @size = arg2; } kretprobe:tcp_sendmsg /comm == \"%s\"/ { @sum = @sum + @size; } interval:ms:1002 { exit(); } END { printf(\"%s\", @sum); clear(@size); clear(@sum); }\'",app,app,"%lu");
 
 	pipe = popen(try,"r");
 	if (!pipe)
