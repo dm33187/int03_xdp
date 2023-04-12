@@ -292,6 +292,7 @@ static __u32 egress_time = 0;
 static __u32 hop_hop_latency_threshold = 0;
 static __u32 curr_hop_key_hop_index = 0;
 static int vFlowCount = 0;
+static int vFlowCountWrapped = 0;
 static sFlowCounters_t sFlowCounters[NUM_OF_FLOWS_TO_KEEP_TRACK_OF];
 #define MAP_DIR "/sys/fs/bpf/test_maps"
 #if 0
@@ -719,19 +720,23 @@ void check_req(http_s *h, char aResp[])
 	if (strstr(pReqData,"GET /-pc"))
 	{
 		//Get counters
-		int i, g, start = 0, vNoactivitySoFar = 0;
+		int i, g, start = 0, vNoactivitySoFar = 0, vLoopMax = 0;
 		
 		gettime(&clk, ctime_buf);
 		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to provide counters of tuning activities throughout data transfer***\n", ctime_buf, phase2str(current_phase));
 
-		for (g = 0; g < vFlowCount+1; g++)
+		if (vFlowCountWrapped) //array wrapped already
+			vLoopMax = NUM_OF_FLOWS_TO_KEEP_TRACK_OF;
+		else
+			vLoopMax = vFlowCount + 1;
+
+		for (g = 0; g < vLoopMax; g++)
 		{
-			if (sFlowCounters[g].num_tuning_activities == 0 && !sFlowCounters[g].gFlowCountUsed) 
+			if (sFlowCounters[g].num_tuning_activities == 0 && !sFlowCounters[g].gFlowCountUsed && !vFlowCountWrapped && !g) 
 			{
 				strcpy(aResp,"***No tuning activity has happened so far***\n");
 				start = strlen(aResp);
 				vNoactivitySoFar = 1;
-
 			}
 			else
 				{
@@ -744,6 +749,7 @@ void check_req(http_s *h, char aResp[])
 
 					for (i = 0; i < num_activities; i++)
 					{
+						vNoactivitySoFar = 0;
 						memcpy(aResp+start, sFlowCounters[g].what_was_done[i], strlen(sFlowCounters[g].what_was_done[i]));
 						start = start + strlen(sFlowCounters[g].what_was_done[i]);
 						aResp[start] = '\n';
@@ -1846,7 +1852,10 @@ start:
 		else
 			{
 				if (++vFlowCount == NUM_OF_FLOWS_TO_KEEP_TRACK_OF) 
+				{
+					vFlowCountWrapped = 1;
 					vFlowCount = 0;
+				}
 			
 				sFlowCounters[vFlowCount].num_tuning_activities = 0;
 				sFlowCounters[vFlowCount].gFlowCountUsed = 0;
