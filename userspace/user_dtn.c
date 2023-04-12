@@ -292,6 +292,7 @@ static __u32 egress_time = 0;
 static __u32 hop_hop_latency_threshold = 0;
 static __u32 curr_hop_key_hop_index = 0;
 static int vFlowCount = 0;
+static int vFlowCountWrapped = 0;
 static sFlowCounters_t sFlowCounters[NUM_OF_FLOWS_TO_KEEP_TRACK_OF];
 #define MAP_DIR "/sys/fs/bpf/test_maps"
 #if 0
@@ -468,21 +469,20 @@ void record_activity(char *pActivity)
 
 	static __u32 myCount = 0;
 	gettime(&clk, ctime_buf);
-	sprintf(add_to_activity,"***vFlowcount = %d, num_tuning_activty = %d, myCount = %u",vFlowCount, sFlowCounters[vFlowCount].num_tuning_activities + 1, myCount++);
+	sprintf(add_to_activity,":::***vFlowcount = %d, num_tuning_activty = %d, myCount = %u",vFlowCount, sFlowCounters[vFlowCount].num_tuning_activities + 1, myCount++);
 	strcat(pActivity,add_to_activity);
-	//sprintf(activity,"%s %s: ***hop_key.hop_index %X, Doing Something***vFlowcount = %d, num_tuning_activty = %d, myCount = %u", ctime_buf, phase2str(current_phase), curr_hop_key_hop_index, vFlowCount, sFlowCounters[vFlowCount].num_tuning_activities + 1, myCount++);
 
 	if (vDebugLevel > 4)
 		fprintf(tunLogPtr,"%s\n",pActivity); //special case for testing - making sure activity is recorded to use with tuncli
 
 	strcpy(sFlowCounters[vFlowCount].what_was_done[sFlowCounters[vFlowCount].num_tuning_activities], pActivity);
+	sFlowCounters[vFlowCount].gFlowCountUsed = 1;	
+
 	(sFlowCounters[vFlowCount].num_tuning_activities)++;
 	if (sFlowCounters[vFlowCount].num_tuning_activities == MAX_TUNING_ACTIVITIES_PER_FLOW)
 	{
 		sFlowCounters[vFlowCount].num_tuning_activities = 0;
 	}
-
-	sFlowCounters[vFlowCount].gFlowCountUsed = 1;	
 
 	return;
 }
@@ -640,14 +640,6 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 
 		fflush(tunLogPtr);
 	}
-#if 0
-	if (gFlowCountUsed)
-	{	
-	//	if (++vFlowCount == NUM_OF_FLOWS_TO_KEEP_TRACK_OF) vFlowCount = 0;
-		sFlowCounters[vFlowCount].num_tuning_activities = 0;
-		gFlowCountUsed = 0;
-	}
-#endif			
 }
 
 void lost_func(struct threshold_maps *ctx, int cpu, __u64 cnt)
@@ -728,44 +720,53 @@ void check_req(http_s *h, char aResp[])
 	if (strstr(pReqData,"GET /-pc"))
 	{
 		//Get counters
-		int i, g, start = 0;
-		for (g = 0; g <= vFlowCount; g++)
-		{
-			if (g == MAX_TUNING_ACTIVITIES_PER_FLOW) break; //use this untile we can figure out when a new flow starts
-
-			if (sFlowCounters[g].num_tuning_activities == 0 && sFlowCounters[g].gFlowCountUsed)
-				strcpy(aResp,sFlowCounters[g].what_was_done[MAX_TUNING_ACTIVITIES_PER_FLOW - 1]);
-			else
-				if (sFlowCounters[g].num_tuning_activities == 0 && !g) //vFlowCount == 0
-				{
-					strcpy(aResp,"***No tuning activity has happened so far***\n");
-					break;
-				}
-				else
-					if (sFlowCounters[g].num_tuning_activities == 0)  //vFlowCount > 0
-						break;
-					else
-						{
-							int num_activities = sFlowCounters[g].num_tuning_activities; //for now as a simple aid with critical sections
-							fprintf(stdout,"FlowCount = %d, num_activities = %d\n",g, num_activities);
-							for (i = 0; i < num_activities; i++)
-							{
-								memcpy(aResp+start, sFlowCounters[g].what_was_done[i], strlen(sFlowCounters[g].what_was_done[i]));
-								start = start + strlen(sFlowCounters[g].what_was_done[i]);
-								aResp[start] = '\n';
-								start++;
-								fprintf(stdout,"start = %d\n",start);
-							}
-							aResp[start-1] = 0;
-						}
-		}
-
-		fprintf(stdout,"%s",aResp);	
-		fprintf(stdout,"\n***\n");
-		fflush(stdout);
-
+		int i, g, start = 0, vNoactivitySoFar = 0, vLoopMax = 0;
+		
 		gettime(&clk, ctime_buf);
 		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to provide counters of tuning activities throughout data transfer***\n", ctime_buf, phase2str(current_phase));
+
+		if (vFlowCountWrapped) //array wrapped already
+			vLoopMax = NUM_OF_FLOWS_TO_KEEP_TRACK_OF;
+		else
+			vLoopMax = vFlowCount + 1;
+
+		for (g = 0; g < vLoopMax; g++)
+		{
+			if (sFlowCounters[g].num_tuning_activities == 0 && !sFlowCounters[g].gFlowCountUsed && !vFlowCountWrapped && !g) 
+			{
+				strcpy(aResp,"***No tuning activity has happened so far***\n");
+				start = strlen(aResp);
+				vNoactivitySoFar = 1;
+			}
+			else
+				{
+					int num_activities;
+						
+					if (sFlowCounters[g].num_tuning_activities == 0 && sFlowCounters[g].gFlowCountUsed)
+						num_activities = MAX_TUNING_ACTIVITIES_PER_FLOW; //This means num_tuning_activities got recycled to zero, but it was really maxed out
+					else
+						num_activities = sFlowCounters[g].num_tuning_activities; 
+
+					for (i = 0; i < num_activities; i++)
+					{
+						vNoactivitySoFar = 0;
+						memcpy(aResp+start, sFlowCounters[g].what_was_done[i], strlen(sFlowCounters[g].what_was_done[i]));
+						start = start + strlen(sFlowCounters[g].what_was_done[i]);
+						aResp[start] = '\n';
+						start++;
+					}
+				}
+		}
+
+		aResp[start-1] = 0;
+
+		if (vNoactivitySoFar)
+			fprintf(tunLogPtr,"%s***Tuning Activities*** \n%s%s\n", pLearningSpaces, pLearningSpaces, aResp);
+		else
+			fprintf(tunLogPtr,"%s***Tuning Activities*** \n%s\n", pLearningSpaces, aResp);
+
+		fprintf(tunLogPtr,"%s***End of Tuning Activities***\n\n", pLearningSpaces);
+
 		goto after_check;
 	}
 
@@ -1351,7 +1352,7 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 
 							fprintf(tunLogPtr, "%s %s: ***APPLIED TUNING***: %s\n\n",ctime_buf, phase2str(current_phase), aApplyDefTun);
 
-							sprintf(activity,"%s %s: ***ACTIVITY=APPLIED=TUNING***: %s\n",ctime_buf, phase2str(current_phase), aApplyDefTun);
+							sprintf(activity,"%s %s: ***ACTIVITY=APPLIED TUNING***: %s",ctime_buf, phase2str(current_phase), aApplyDefTun);
 							record_activity(activity); //make sure activity big enough to concatenate additional data -- see record_activity()
 
 							*applied = 1;
@@ -1416,7 +1417,7 @@ double fCheckAppBandwidth(char app[])
 	unsigned long vBandWidthInBits = 0;
 	double vBandWidthInGBits = 0;
 
-	sprintf(try,"bpftrace -e \'BEGIN { zero(@size); zero(@sum); } kprobe:tcp_sendmsg /comm == \"%s\"/ { @size = arg2; } kretprobe:tcp_sendmsg /comm == \"%s\"/ { @sum = @sum + @size; } interval:ms:1008 { exit(); } END { printf(\"%s\", @sum); clear(@size); clear(@sum); }\'",app,app,"%lu");
+	sprintf(try,"bpftrace -e \'BEGIN { zero(@size); zero(@sum); } kprobe:tcp_sendmsg /comm == \"%s\"/ { @size = arg2; } kretprobe:tcp_sendmsg /comm == \"%s\"/ { @sum = @sum + @size; } interval:ms:1002 { exit(); } END { printf(\"%s\", @sum); clear(@size); clear(@sum); }\'",app,app,"%lu");
 
 	pipe = popen(try,"r");
 	if (!pipe)
@@ -1553,6 +1554,7 @@ void * fDoRunGetThresholds(void * vargp)
 	int applied = 0, suggested = 0, nothing_done = 0, max_apply = 0, something_wrong_check = 0;
 	int tune = 1; //1 = up, 2 = down - tune up initially
 	static unsigned long count = 0;
+	static int vFirstTimeThru = 1;
 
 	sprintf(try,"bpftrace -e \'BEGIN { @name;} kprobe:dev_get_stats { $nd = (struct net_device *) arg0; @name = $nd->name; } kretprobe:dev_get_stats /@name == \"%s\"/ { $rtnl = (struct rtnl_link_stats64 *) retval; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); } interval:s:1 { exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu");
 	/* fix for kfunc below too */
@@ -1843,6 +1845,22 @@ start:
 	{
 		rx_traffic = 1;
 		new_traffic = 1;
+
+		//Track vFlowCount this way
+		if (vFirstTimeThru)
+			vFirstTimeThru = 0;
+		else
+			{
+				if (++vFlowCount == NUM_OF_FLOWS_TO_KEEP_TRACK_OF) 
+				{
+					vFlowCountWrapped = 1;
+					vFlowCount = 0;
+				}
+			
+				sFlowCounters[vFlowCount].num_tuning_activities = 0;
+				sFlowCounters[vFlowCount].gFlowCountUsed = 0;
+			}
+
 		if (vDebugLevel > 1)
 		{
 			gettime(&clk, ctime_buf);
