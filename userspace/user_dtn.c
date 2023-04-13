@@ -1557,7 +1557,6 @@ void * fDoRunGetThresholds(void * vargp)
 	int tune = 1; //1 = up, 2 = down - tune up initially
 	static unsigned long count = 0;
 	static int vFirstTimeThru = 1;
-	int avg_tx_Gb_ps_off = 0;
 
 	sprintf(try,"bpftrace -e \'BEGIN { @name;} kprobe:dev_get_stats { $nd = (struct net_device *) arg0; @name = $nd->name; } kretprobe:dev_get_stats /@name == \"%s\"/ { $rtnl = (struct rtnl_link_stats64 *) retval; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); } interval:s:1 { exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu");
 	/* fix for kfunc below too */
@@ -1567,14 +1566,13 @@ start:
 	if (vDebugLevel > 2 && previous_average_tx_Gbits_per_sec && vIamASrcDtn)
 	{
 		fGetAppBandWidth();
-		sleep(1);
+	//	sleep(1);
 	}
 #if 1
 	rx_before =  rx_now = rx_bytes_tot = rx_kbits_per_sec = 0;
 	tx_before =  tx_now = tx_bytes_tot = tx_kbits_per_sec = 0;
 	last_tx_bytes = last_rx_bytes = 0;	
 #endif
-	avg_tx_Gb_ps_off = 0;
 	tx_bytes_tot = 0;
 	rx_bytes_tot = 0;	
 	tx_kbits_per_sec = 0;
@@ -1649,17 +1647,22 @@ start:
 		//average_tx_bits_per_sec = average_tx_bits_per_sec/check_bitrate_interval;
 		average_tx_kbits_per_sec = average_tx_kbits_per_sec/(double)check_bitrate_interval;
 		average_tx_Gbits_per_sec = average_tx_kbits_per_sec/(double)(1000000);
-		if (average_tx_Gbits_per_sec)
-			average_tx_Gbits_per_sec = average_tx_Gbits_per_sec + tx_jitter;
 		check_bitrate_interval = 0;
-		//Sanity checking here - need to further investigate
-
-		if ((average_tx_Gbits_per_sec - tx_jitter) > (netDeviceSpeed/1000))
+		
+		if (average_tx_Gbits_per_sec)
 		{
-			//can't be - something off - try and reset
-			fprintf(tunLogPtr,"%s %s: average_tx_Gbits_per_sec = %.2f Gb/s is way too high (BITRATE)... will reset to %.2f Gb/s\n",ctime_buf, phase2str(current_phase), average_tx_Gbits_per_sec, vGoodBitrateValue);
-			average_tx_Gbits_per_sec =  vGoodBitrateValue;
-			avg_tx_Gb_ps_off = 1;
+			//Sanity checking here - need to further investigate how this could happen
+			if (average_tx_Gbits_per_sec > (netDeviceSpeed/1000))
+			{
+				//can't be - something off - don't use as a recorded value 
+				gettime(&clk, ctime_buf);
+				fprintf(tunLogPtr,"%s %s: ***ERROR BITRATE*** average_tx_Gbits_per_sec = %.2f Gb/s is above maximum Bandwidth of %.2f... skipping this value\n",ctime_buf, phase2str(current_phase), average_tx_Gbits_per_sec, netDeviceSpeed/1000.0);
+				average_tx_Gbits_per_sec = 0.0;
+				average_tx_kbits_per_sec = 0.0;
+				goto tx_Gbs_off;
+			}
+		
+			average_tx_Gbits_per_sec = average_tx_Gbits_per_sec + tx_jitter;
 		}
 	}
 
@@ -1834,19 +1837,22 @@ start:
 
 			if (average_tx_Gbits_per_sec >= 1) //must be at least a Gig to check
 				check_if_bitrate_too_low(average_tx_Gbits_per_sec, &applied, &suggested, &nothing_done, &tune, aApplyDefTunBest);
-
+#if 0
 			if (vDebugLevel > 5 && (tx_kbits_per_sec || rx_kbits_per_sec))
 			{
 				fprintf(tunLogPtr, "%s %s: ***Sleeping for %d microseconds before resuming Bitrate checking...\n", ctime_buf, phase2str(current_phase), gInterval);
 				fflush(tunLogPtr);
 			}
-				
+#endif				
 			average_tx_Gbits_per_sec = 0.0;
 			average_tx_kbits_per_sec = 0.0;
-			my_usleep(gInterval); //sleeps in microseconds
+//			my_usleep(gInterval); //sleeps in microseconds
 	}
 
-	msleep(1000); //give it another second to quiesce
+tx_Gbs_off:
+	if (!check_bitrate_interval)
+		msleep(1000); //give it another second to quiesce
+
 	if (!rx_kbits_per_sec)
 	{
 		rx_traffic = 0;
