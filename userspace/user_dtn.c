@@ -26,7 +26,9 @@
 FILE * tunLogPtr = 0;
 FILE * csvLogPtr = 0;
 
-char *pLearningSpaces = "                                    ";
+char *pLearningSpaces 			= "                                    ";
+char *pLearningSpacesMinusLearning 	= "                          ";
+
 void gettime(time_t *clk, char *ctime_buf)
 {
 	*clk = time(NULL);
@@ -1169,8 +1171,8 @@ finish_up:
 	if (found)
 	{
 		gettime(&clk, ctime_buf);
-		fprintf(tunLogPtr, "%s!!!*****PLEASE CHECK IF MTU of Physical Interface \"%s\" is correct or MTU of Interface \"%s\" is correct********!!!\n",
-			pLearningSpaces, netDevice, log_inter);
+		fprintf(tunLogPtr, "%sBITRATE : !!!*****PLEASE CHECK IF MTU of Physical Interface \"%s\" is correct or MTU of Interface \"%s\" is correct********!!!\n",
+			pLearningSpacesMinusLearning, netDevice, log_inter);
 		
 		sprintf(try,"cat /sys/class/net/%s/mtu", log_inter);
 
@@ -1190,7 +1192,7 @@ finish_up:
 		pclose(pipe2);		
 
 
-		fprintf(tunLogPtr, "%s!!!***** MTU of %s is %s", pLearningSpaces, log_inter, buffer);
+		fprintf(tunLogPtr, "%sBITRATE : !!!***** MTU of %s is %s", pLearningSpacesMinusLearning, log_inter, buffer);
 		
 		sprintf(try,"cat /sys/class/net/%s/mtu", netDevice);
 
@@ -1209,10 +1211,10 @@ finish_up:
 
 		pclose(pipe3);		
 		
-		fprintf(tunLogPtr, "%s!!!***** MTU of %s is %s", pLearningSpaces, netDevice, buffer2);
+		fprintf(tunLogPtr, "%sBITRATE : !!!***** MTU of %s is %s", pLearningSpacesMinusLearning, netDevice, buffer2);
 
 		if(strcmp(buffer, buffer2) != 0)
-			fprintf(tunLogPtr, "%s!!!***** WARNING ***** ABOVE MTUs are NOT the same*****!!!\n", pLearningSpaces);
+			fprintf(tunLogPtr, "%sBITRATE : !!!***** WARNING ***** ABOVE MTUs are NOT the same*****!!!\n", pLearningSpacesMinusLearning);
 
 		fflush(tunLogPtr);
         }
@@ -1291,7 +1293,7 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 						if (vDebugLevel > 0)
 						{
 							//don't apply - just log suggestions - decided to use a debug level here because this file could fill up if user never accepts recommendation
-							fprintf(tunLogPtr, "%s %s: ***CURRENT TUNING***: %s*",ctime_buf, phase2str(current_phase), buffer);
+							fprintf(tunLogPtr, "%s %s: ***CURRENT TUNING***: %s",ctime_buf, phase2str(current_phase), buffer);
 							fprintf(tunLogPtr, "%s %s: *** Current Tuning of net.ipv4.tcp_wmem appears sufficient***\n", ctime_buf, phase2str(current_phase));
 						}
 						
@@ -1372,7 +1374,7 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 							if (vDebugLevel > 0)
 							{
 								//don't apply - just log suggestions - decided to use a debug level here because this file could fill up if user never accepts recommendation
-								fprintf(tunLogPtr, "%s %s: ***CURRENT TUNING***: %s*",ctime_buf, phase2str(current_phase), buffer);
+								fprintf(tunLogPtr, "%s %s: ***CURRENT TUNING***: %s",ctime_buf, phase2str(current_phase), buffer);
 								fprintf(tunLogPtr, "%s %s: *** Current Tuning of net.ipv4.tcp_wmem appears sufficient***\n", ctime_buf, phase2str(current_phase));
 							}
 						}
@@ -1555,6 +1557,7 @@ void * fDoRunGetThresholds(void * vargp)
 	int tune = 1; //1 = up, 2 = down - tune up initially
 	static unsigned long count = 0;
 	static int vFirstTimeThru = 1;
+	int avg_tx_Gb_ps_off = 0;
 
 	sprintf(try,"bpftrace -e \'BEGIN { @name;} kprobe:dev_get_stats { $nd = (struct net_device *) arg0; @name = $nd->name; } kretprobe:dev_get_stats /@name == \"%s\"/ { $rtnl = (struct rtnl_link_stats64 *) retval; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); } interval:s:1 { exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu");
 	/* fix for kfunc below too */
@@ -1571,7 +1574,7 @@ start:
 	tx_before =  tx_now = tx_bytes_tot = tx_kbits_per_sec = 0;
 	last_tx_bytes = last_rx_bytes = 0;	
 #endif
-
+	avg_tx_Gb_ps_off = 0;
 	tx_bytes_tot = 0;
 	rx_bytes_tot = 0;	
 	tx_kbits_per_sec = 0;
@@ -1649,6 +1652,15 @@ start:
 		if (average_tx_Gbits_per_sec)
 			average_tx_Gbits_per_sec = average_tx_Gbits_per_sec + tx_jitter;
 		check_bitrate_interval = 0;
+		//Sanity checking here - need to further investigate
+
+		if ((average_tx_Gbits_per_sec - tx_jitter) > (netDeviceSpeed/1000))
+		{
+			//can't be - something off - try and reset
+			fprintf(tunLogPtr,"%s %s: average_tx_Gbits_per_sec = %.2f Gb/s is way too high (BITRATE)... will reset to %.2f Gb/s\n",ctime_buf, phase2str(current_phase), average_tx_Gbits_per_sec, vGoodBitrateValue);
+			average_tx_Gbits_per_sec =  vGoodBitrateValue;
+			avg_tx_Gb_ps_off = 1;
+		}
 	}
 
 	gettime(&clk, ctime_buf);
@@ -1663,7 +1675,7 @@ start:
 	{
 		if (!check_bitrate_interval)
 		{
-			fprintf(tunLogPtr,"%s %s: average_tx_Gbits_per_sec = %.2f Gb/s, bitrate_interval = %d \n",ctime_buf, phase2str(current_phase), average_tx_Gbits_per_sec, keep_bitrate_interval);
+			fprintf(tunLogPtr,"%s %s: average_tx_Gbits_per_sec = %.2f Gb/s, BITRATE_INTERVAL = %d \n",ctime_buf, phase2str(current_phase), average_tx_Gbits_per_sec, keep_bitrate_interval);
 		}
 	}
 
@@ -1958,7 +1970,7 @@ void fDoManageRtt(double highest_rtt_ms, int * applied, int * suggested, int * n
 						if (vDebugLevel > 0)
 						{
 							//don't apply - just log suggestions - decided to use a debug level here because this file could fill up if user never accepts recommendation
-							fprintf(tunLogPtr, "%s %s: ***CURRENT TUNING***: %s*",ctime_buf, phase2str(current_phase), buffer);
+							fprintf(tunLogPtr, "%s %s: ***CURRENT TUNING***: %s",ctime_buf, phase2str(current_phase), buffer);
 							fprintf(tunLogPtr, "%s %s: *** Current Tuning of net.ipv4.tcp_wmem appears sufficient***\n", ctime_buf, phase2str(current_phase));
 						}
 						
@@ -2100,14 +2112,19 @@ double fDoCpuMonitoring()
 							//we have some CPUs that we want - catch up and print 
 							fprintf(tunLogPtr,"\n%s %s: ***Monitoring CPUs that are being utilized at least 10%c***\n", 
 													ctime_buf, phase2str(current_phase),'%');
-							fprintf(tunLogPtr,"%s%s", pLearningSpaces, header_buffer);
-							fprintf(tunLogPtr,"%s%s", pLearningSpaces, buffer);
+							fprintf(tunLogPtr,"%sCPU     : %s", pLearningSpacesMinusLearning, header_buffer);
+							fprintf(tunLogPtr,"%sCPU     : %s", pLearningSpacesMinusLearning, buffer);
 						}
 						
 						count++;
 					}
 					else
-						fprintf(tunLogPtr,"%s%s", pLearningSpaces, buffer);					
+						{
+							if (buffer[0] != '\n')
+								fprintf(tunLogPtr,"%sCPU     : %s", pLearningSpacesMinusLearning, buffer);					
+							else
+								fprintf(tunLogPtr,"%s%s", pLearningSpaces, buffer);					
+						}
 			}
 
 		}
