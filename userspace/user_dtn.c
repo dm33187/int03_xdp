@@ -1655,8 +1655,11 @@ start:
 			if (average_tx_Gbits_per_sec > (netDeviceSpeed/1000))
 			{
 				//can't be - something off - don't use as a recorded value 
-				gettime(&clk, ctime_buf);
-				fprintf(tunLogPtr,"%s %s: ***ERROR BITRATE*** average_tx_Gbits_per_sec = %.2f Gb/s is above maximum Bandwidth of %.2f... skipping this value\n",ctime_buf, phase2str(current_phase), average_tx_Gbits_per_sec, netDeviceSpeed/1000.0);
+				if (vDebugLevel > 0)
+				{
+					gettime(&clk, ctime_buf);
+					fprintf(tunLogPtr,"%s %s: ***ERROR BITRATE*** average_tx_Gbits_per_sec = %.2f Gb/s is above maximum Bandwidth of %.2f... skiping this value\n",ctime_buf, phase2str(current_phase), average_tx_Gbits_per_sec, netDeviceSpeed/1000.0);
+				}
 				average_tx_Gbits_per_sec = 0.0;
 				average_tx_kbits_per_sec = 0.0;
 				goto tx_Gbs_off;
