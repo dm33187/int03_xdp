@@ -262,8 +262,8 @@ typedef struct {
 	char ** argv;
 } sArgv_t;
 
-#include "../../c++-int-sink/int-sink/src/shared/int_defs.h"
-#include "../../c++-int-sink/int-sink/src/shared/filter_defs.h"
+#include "../../int-sink/src/shared/int_defs.h"
+#include "../../int-sink/src/shared/filter_defs.h"
 
 enum ARGS{
 	CMD_ARG,
