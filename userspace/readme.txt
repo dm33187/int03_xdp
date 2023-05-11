@@ -1,11 +1,13 @@
-		Notes on using the dtntune utility
+		Notes on using the Tuning Module
 		----------------------------------
+**Important Note:**
+- Before starting the Tuning Module, edit the file "user_config.txt" and specify the 
+- name of the NIC you are going to use on the line marked 'nic_to_use'
 
-dtntune is use to tune the Linux host for networking purposes.
-Please type "sudo ./dtnmenu" and follow instructions to tune system
+- To start the Tuning Module type 'sudo ./userdtn_adm start'
+- To stop the Tuning Module type 'sudo ./userdtn_adm stop'
 
-Note: This package requires 'lshw' and 'dmidecode' utilities tools
-      to be installed on the system
+- To see what options can be changed dynamically, including debug levels,  type "./tuncli"
 
 Additional Notes:
 There are 6 files that are used in conjunction with the Tuning Module: 
@@ -75,10 +77,9 @@ regarding performance issues to the source.  The default value is 5524.
 
 j. nic_to_use
 The name of the NIC that the Tuning Module will be working with. Eg. enp6s0.
-gdv_100.sh
-==========
-Same as gdv.sh below, but used for NICs with speeds >= 100G
 
+k. nic_attach_type
+The bpf program will attach to  network interface using this type
 
 gdv.sh 
 ======
@@ -147,6 +148,21 @@ The net.ipv4.tcp_wmem attribute is the amount of memory in bytes for write
 (transmit) buffers per open socket. It contains the minimum, default and maximum
 values.  The recommended values are 4096 65536 33554432. 
 
+gdv_100.sh
+==========
+The gdv_100.sh file is similar to the gdv.sh file, but it used when there is
+100 Gig card in play. It alos has a couple of additional tunables:
+
+a. net.core.netdev_max_backlog
+This parameter sets the maximum size of the network interface's receive queue.
+The queue is used to store received frames after removing them from the network
+adapter's ring buffer.
+
+b. net.ipv4.tcp_no_metrics_save
+By default, TCP saves various connection metrics in the route cache when the connection
+closes, so that connections established in the near future can use these to set initial
+conditions. Usually, this increases overall performance, but may sometimes cause performance
+degradation. If set, TCP will not cache metrics on closing connections.
 
 /tmp/tuningLog 
 ==============
@@ -163,7 +179,6 @@ create JSON formatted data.
 ==============================================
 ==============================================
 Additional specs that may be worth checking out. 
-Current settings below are on int03:
 
 /***
  ***Maximum number of microseconds in one NAPI polling cycle. 
