@@ -4,28 +4,42 @@
 dtntune is use to tune the Linux host for networking purposes.
 Please type "sudo ./dtnmenu" and follow instructions to tune system
 
-Note: This package requires 'lshw' and 'dmidecode' utilities tools
-      to be installed on the system
-
 Additional Notes:
-There are 3 files that are used in conjunction with the Tuning Module: 
+There are 4 files that are used in conjunction with the Tuning Module: 
 i.   user_config.txt 
 ii.  gdv.sh 
-iii. /tmp/tuningLog 
+iii. gdv_100.sh
+iv. /tmp/tuningLog 
 
 user_config.txt 
 ===============
 In the user_config.txt, the operator can use certain well known values to 
-control how the Tuning Module operates.  So far, there are 2 parameter 
+control how the Tuning Module operates.  So far, there are five parameters
 that can be used.  The following is an explanation for them: 
 
-a. apply_default_system_tuning 
+a. learning_mode_only
+The learning_mode_only parameter is a no-op parameter for this utility.
+It will be removed in the next release. 
+
+b. apply_bios_tuning
+The apply_bios_tuning parameter is use to tell the Tuning Module if after
+evaluating the BIOS configuration, it should apply the recommendations
+itself or not. The default is "n" which means it should make the
+recommendations to the DTN operator, but not apply them itself.
+
+c. apply_nic_tuning
+The apply_nic_tuning parameter is use to tell the Tuning Module if after
+evaluating the NIC configuration, it should apply the recommendations
+itself or not. The default is "n" which means it should make the
+recommendations to the DTN operator, but not apply them itself.
+
+d. apply_default_system_tuning 
 The apply_default_system_tuning parameter is used to tell the Tuning Module if 
 it should apply the initial tuning recommendations during the ASSESSMENT phase 
 or not. The default value is “n” which means it should not apply the initial
 tuning recommendations.                  
 
-b. make_default_system_tuning_perm
+e. make_default_system_tuning_perm
 The make_default_system_tuning_perm is used to tell the Tuning Module if
 it should make permanent any system tunings applied permanent or not. The 
 default value is "n" which means it should not make permanent any system
@@ -99,41 +113,24 @@ The net.ipv4.tcp_wmem attribute is the amount of memory in bytes for write
 (transmit) buffers per open socket. It contains the minimum, default and maximum
 values.  The recommended values are 4096 65536 33554432. 
 
+gdv_100.sh 
+==========
+The gdv_100.sh file is similar to the gdv.sh file, but it used when there is
+100 Gig card in play. It also has a couple of additional tunables:
+
+a. net.core.netdev_max_backlog 
+This parameter sets the maximum size of the network interface's receive queue. 
+The queue is used to store received frames after removing them from the network 
+adapter's ring buffer.
+
+b. net.ipv4.tcp_no_metrics_save
+By default, TCP saves various connection metrics in the route cache when the connection 
+closes, so that connections established in the near future can use these to set initial 
+conditions. Usually, this increases overall performance, but may sometimes cause performance 
+degradation. If set, TCP will not cache metrics on closing connections.
 
 /tmp/tuningLog 
 ==============
 The tuningLog file contains the output of all the logging that the 
 Tuning Module does. 
-
-
-==============================================
-==============================================
-==============================================
-Additional specs that may be worth checking out. 
-Current settings below are on int03:
-
-/***
- ***Maximum number of microseconds in one NAPI polling cycle. 
- ***Polling will exit when either netdev_budget_usecs have elapsed during 
- ***the poll cycle or the number of packets processed reaches netdev_budget.
- ***
- ***/
-net.core.netdev_budget = 300 
-net.core.netdev_budget_usecs = 8000 
-
-
-/***
- ***Maximum number of packets, queued on the INPUT side, when the interface 
- ***receives packets faster than kernel can process them.
- ***
- ***/
-net.core.netdev_max_backlog = 1000 
-
-/***
- ***Increase transmission queue of interface. 
- ***Example provided here. Probably can increase more.
- ***
- ***/
-ifconfig ethXXX txqueuelen 10000 
-
 
