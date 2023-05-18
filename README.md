@@ -79,12 +79,10 @@ In order to compile and work with the Tuning Module, do the following:
 		*	```git submodule init```
 		*	```git submodule update```
 
--	Run ```make``` in ```userspace/``` and start the Tuning Module eg. ```sudo ./user_dtn -d enp6s0```
-	* 	```/tmp/tuningLog``` will contain all the relevant output 
--	Run ```make``` in ```cli/```. This will create a directory call ```tmp``` which contains the binary ```tuncli```.
-	Run the binary and follow the instructions onscreen on how to use it
+-	Run ```make``` in ```userspace/``` to create Tuning Module's binaries
+-	Run ```make``` in ```cli/``` to create a directory call ```tmp``` which contains the binary ```tuncli```
 
-**To make a zip package:**
+**Make a zip package to install Tuning Module:**
 -	go to ```packaging``` directory
 -	type ```sh ./createpkg.sh``` to create two zip files, one of which is called ```SATuning_Module.zip```. 
 -	```SATuning_Module.zip``` consist of files from the ```userspace``` and ```cli``` directory
