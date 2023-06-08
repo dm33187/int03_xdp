@@ -461,7 +461,10 @@ void fDoSystemTuning(void)
 	fprintf(tunLogPtr, "%s %s: ***NOTE - If the recommended value is less than or equal to the current value, no changes will be made for that setting***\n\n", ctime_buf, phase2str(current_phase));
 
 #define SETTINGS_PAD_MAX 58
+#define SETTINGS_PAD_MAX2 39
+#define SETTINGS_PAD_MAX3 28
 #define HEADER_SETTINGS_PAD  50
+
 	fprintf(tunLogPtr, "%s %*s %25s %20s\n", header2[0], HEADER_SETTINGS_PAD, header2[1], header2[2], header2[3]);
 	fflush(tunLogPtr);
 
@@ -573,11 +576,11 @@ void fDoSystemTuning(void)
 									i++;
 									j++;
 								}
-#define SETTINGS_PAD_MAX2 43
+								
 								vPad = SETTINGS_PAD_MAX2-(strlen(min) + strlen(def) + strlen(max));
-								fprintf(tunLogPtr,"%*s %s %s", vPad, min, def, max);	
+								fprintf(tunLogPtr,"%*s%s %s %s", vPad, " ", min, def, max);//adjacent strings are combined in padding - who knew ;-) - hence the extra space
 								currmax = atoi(max);
-#define SETTINGS_PAD_MAX3 28
+								
 								{
 									char strValmin[128];
 									char strValdef[128];
@@ -673,10 +676,10 @@ void fDoSystemTuning(void)
                                         					i++;
                                         					j++;
                                     					}
-#define SETTINGS_PAD_MAX2 43
+									
 									vPad = SETTINGS_PAD_MAX2-(strlen(min) + strlen(def) + strlen(max));
-									fprintf(tunLogPtr,"%*s %s %s", vPad, min, def, max);
-#define SETTINGS_PAD_MAX3 28
+									fprintf(tunLogPtr,"%*s%s %s %s", vPad, " ", min, def, max);//adjacent strings are combined in padding
+									
 									{
 										char strValmin[128];
 										char strValdef[128];
@@ -689,6 +692,9 @@ void fDoSystemTuning(void)
 										y = sprintf(strValmax,"%d",aTuningNumsToUse[count].maximum);
 										total += y;
 										vPad = SETTINGS_PAD_MAX3-total;
+									
+										if (strcmp("net.ipv4.tcp_wmem",setting) == 0)
+											my_tune_max = atoi(strValmax);
 			
 										fprintf(tunLogPtr,"%*s %s %s %20s\n", vPad, strValmin, strValdef, strValmax, "na");
 									}
