@@ -1943,7 +1943,7 @@ void fDoManageRtt(double highest_rtt_ms, int * applied, int * suggested, int * n
 	unsigned int kmaximum;
 	double average_tx_Gbits_per_sec = 2000.00;
 
-	return;
+	return; //******ATTENTION!!!!!!!!! doesn't do anything for now ******** ATTENTION!!!!!!!!!
 
 	gettime(&clk, ctime_buf);
 	if (from_bpftrace)
@@ -2269,6 +2269,57 @@ finish_up:
 return avg_rtt_ping;
 }
 
+void fDoCheckSoftirqd(void);
+void fDoCheckSoftirqd(void)
+{
+	time_t clk;
+	char ctime_buf[27];
+	char buffer[128];
+	FILE *pipe;
+	char try[1024];
+	//double vCpuAmountUsed = 0.0;
+        char * foundstr = 0;
+
+	sprintf(try,"top -b -n 1 | grep softirqd | awk \'{ printf(\"%s   %s\\n\", $9, $12); }\' | grep -E \'100|[6-9][0-9].\'", "%-8s", "%-8s");
+	//sprintf(try,"top -n 1 | grep softirqd | awk \'{ printf(\"%s   %s\\n\", $10, $13); }\'", "%-8s", "%-8s");
+	
+	pipe = popen(try,"r");
+	if (!pipe)
+	{
+		printf("popen failed!\n");
+		printf("here2***\n");
+		return;
+	}
+
+	while (!feof(pipe))
+	{
+		// use buffer to read and add to result
+		if (fgets(buffer, 128, pipe) != NULL)
+		{
+			foundstr = strstr(buffer,"ksoftirqd");
+		}
+		else
+			{
+				goto finish_up;
+			}
+
+		//should look like example: "25.0        ksoftirqd/0"
+		//should look like example: "53.0        ksoftirqd/1"
+                if (foundstr)
+                {
+			gettime(&clk, ctime_buf);
+			fprintf(tunLogPtr,"%s %s: ***WARNING ksoftirqd is using >= 60%c of CPU resources::: %s", ctime_buf, phase2str(current_phase), '%', buffer);
+		}
+		else
+			continue;
+	}
+
+finish_up:
+	pclose(pipe);
+	fflush(tunLogPtr);
+return;
+}
+
 void * fDoRunFindHighestRtt(void * vargp)
 {
 	time_t clk;
@@ -2378,11 +2429,14 @@ finish_up:
 	if (vDebugLevel > 5 && previous_average_tx_Gbits_per_sec)
 	{
 		gettime(&clk, ctime_buf);
-		fprintf(tunLogPtr, "%s %s: ***Sleeping for %d microseconds before resuming RTT checking...\n", ctime_buf, phase2str(current_phase), gInterval);
+		fprintf(tunLogPtr, "%s %s: ***Sleeping for 250000 microseconds before resuming RTT checking...\n", ctime_buf, phase2str(current_phase)); //2 x 250000
 	}
 
 	fflush(tunLogPtr);
-	my_usleep(gInterval); //sleeps in microseconds	
+	my_usleep(250000); //sleeps in microseconds	
+	if (vDebugLevel > 0)
+		fDoCheckSoftirqd(); //Just added
+	my_usleep(250000); 
 	goto rttstart;
 
 return ((char *) 0);
