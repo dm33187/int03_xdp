@@ -228,7 +228,12 @@ case "$1" in
         # Start the user_dtn
 	sleep 1
 	echo "Loading object and pinning map paths..."
-	bpftool prog load int-sink2+filter.bpf.o /sys/fs/bpf/test dev $nic pinmaps /sys/fs/bpf/test_maps/ 2>/tmp/tuningmodstart.out
+	if [ "$attach_type" != "xdpoffload" ]
+        then
+                bpftool prog load int-sink2+filter.bpf.o /sys/fs/bpf/test pinmaps /sys/fs/bpf/test_maps/ 2>/tmp/tuningmodstart.out
+        else
+                bpftool prog load int-sink2+filter.bpf.o /sys/fs/bpf/test dev $nic pinmaps /sys/fs/bpf/test_maps/ 2>/tmp/tuningmodstart.out
+        fi
 	echo "Attaching bpf program to network interface using $attach_type..."
 	bpftool net attach $attach_type pinned /sys/fs/bpf/test dev $nic
 	sleep 1
