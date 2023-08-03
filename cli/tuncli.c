@@ -17,6 +17,8 @@ static char * Usage = "This is an HTTP client to talk to Tuning Module. \
 		       \nUse \"tuncli -ct flow_late [value]\" to change the value of the flow latency delta. \
 		       \nUse \"tuncli -ct q_occ [value]\" to change the value of the queue occupancy delta. \
 		       \nUse \"tuncli -ct flow_sink [value]\" to change the value of the flow sink time delta. \
+		       \nUse \"tuncli -ct q_user_occ [value]\" to change the value of what Qinfo should check to send msg to peer. \
+		       \nUse \"tuncli -ct retrans [value]\" to change the value of how many retransmits per sec is considered a problem.\
 		       \nUse \"tuncli -rtt thresh [value]\" to change the value of the rtt threshold. \
 		       \nUse \"tuncli -rtt factor [value]\" to change the value of the rtt factor.\n";
 
