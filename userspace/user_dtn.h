@@ -2,7 +2,9 @@
 #define __user_dtn_h
 //extern enum workflow_phases;
 
-#define WORKFLOW_NAMES_MAX      4
+#define WORKFLOW_NAMES_MAX	4
+#define CTIME_BUF_LEN		27
+#define MS_CTIME_BUF_LEN	48
 
 enum workflow_phases {
         STARTING,
@@ -40,6 +42,7 @@ extern int numaNode;
 extern char numaNodeString[];
 extern void fDoGetNumaNodeString(char numaString[]);
 extern void gettime(time_t *clk, char *ctime_buf);
+extern void gettimeWithMilli(time_t *clk, char *ctime_buf, char *ms_ctime_buf);
 extern int user_assess(int argc, char **argv);
 extern int fCheckInterfaceExist();
 extern void fDoGetDeviceCap(void);
