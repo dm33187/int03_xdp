@@ -29,9 +29,20 @@ int gAPI_listen_port = 5523; //default listening port
 int gSource_Dtn_Port = 5524; //default listening port
 int netDeviceSpeed = 0;
 int numaNode = 0;
+int nProc = 0;
 char numaNodeString[512]; 
 static int netDevice_rx_ring_buff_cfg_max_val = 0;
 static int netDevice_tx_ring_buff_cfg_max_val = 0;
+
+int netDevice_rx_channel_cfg_max_val = 0;
+int netDevice_tx_channel_cfg_max_val = 0;
+int netDevice_combined_channel_cfg_max_val = 0;
+
+int netDevice_rx_channel_cfg_curr_val = 0;
+int netDevice_tx_channel_cfg_curr_val = 0;
+int netDevice_combined_channel_cfg_curr_val = 0;
+
+int netDevice_only_combined_channel_cfg = 0;
 
 char *pUserCfgFile = "user_config.txt";
 char gTuningMode = 0;
@@ -1201,6 +1212,64 @@ int fDoGetNuma(void)
 	return numa;
 }
 
+int fDoGetNproc()
+{
+	char ctime_buf[27];
+	time_t clk;
+	char *line = NULL;
+	size_t len = 0;
+	ssize_t nread;
+	char aNicSetting[256];
+	FILE *nicCfgFPtr = 0;
+	int numa = -1;
+	int found = 0;
+	char * foundstr = 0;
+	int nProcValue = 0;
+
+
+	gettime(&clk, ctime_buf);
+	sprintf(aNicSetting,"nproc > /tmp/NIC.cfgfile 2>/dev/null");
+	system(aNicSetting);
+
+	nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
+	if (!nicCfgFPtr)
+	{
+		int save_errno = errno;
+		gettime(&clk, ctime_buf);
+		fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve nproc info, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+	}
+	else
+		{
+			sprintf(aNicSetting,"node %d cpus",numaNode);
+
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
+			{
+
+				if (nread > 0)
+				{
+					nProcValue = atoi(line);
+					if (nProcValue > 0)
+						found = 1;
+				}
+					
+				break;
+			}
+
+			fclose(nicCfgFPtr);
+			system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+		
+			if (!found)
+			{
+				fprintf(tunLogPtr,"%s %s: Could not find number of cpus on the system.\n", ctime_buf, phase2str(current_phase));
+			}	
+		}
+
+	if (line)
+		free(line);
+
+	return nProcValue;
+}
+
 void fDoGetNumaNodeString(char numaString[])
 {
 	char ctime_buf[27];
@@ -1366,6 +1435,188 @@ void fDoTxQueueLen()
 		free(line);
 
 	return;
+}
+
+void fDoShowChannels()
+{
+        char ctime_buf[27];
+        time_t clk;
+        char *line = NULL;
+        size_t len = 0;
+        ssize_t nread;
+        struct stat sb;
+        char aNicSetting[512];
+        char sRXMAXValue[256];
+        char sRXCURRValue[256];
+        char sTXMAXValue[256];
+        char sTXCURRValue[256];
+        char sCOMBINEDMAXValue[256];
+        char sCOMBINEDCURRValue[256];
+        int rxcount = 0;
+        int txcount = 0;
+        int combinedcount = 0;
+        int vPad;
+        FILE *nicCfgFPtr = 0;
+
+        sprintf(aNicSetting,"ethtool -l %s > /tmp/NIC.cfgfile 2>/dev/null",netDevice);
+        system(aNicSetting);
+
+        stat("/tmp/NIC.cfgfile", &sb);
+        if (sb.st_size == 0)
+        {
+                //doesn't support ethtool -a
+                goto dnrb_support;
+        }
+
+        nicCfgFPtr = fopen("/tmp/NIC.cfgfile","r");
+        if (!nicCfgFPtr)
+        {
+                int save_errno = errno;
+                gettime(&clk, ctime_buf);
+                fprintf(tunLogPtr,"%s %s: Could not open file /tmp/NIC.cfgfile to retrieve speed value, errno = %d...\n", ctime_buf, phase2str(current_phase), save_errno);
+        }
+        else
+                {
+        		memset(sRXMAXValue,0,256);
+        		memset(sRXCURRValue,0,256);
+        		memset(sTXMAXValue,0,256);
+        		memset(sTXCURRValue,0,256);
+        		memset(sCOMBINEDMAXValue,0,256);
+        		memset(sCOMBINEDCURRValue,0,256);
+
+			fprintf(tunLogPtr,"\n");
+			while((nread = getline(&line, &len, nicCfgFPtr)) != -1)
+                        { //2nd and 3rd keywords RX and tx ring buffer size
+                                int count = 0, ncount = 0;
+                		
+				fprintf(tunLogPtr,"%s", line);
+
+                                if (strstr(line,"RX:") && rxcount == 0)
+                                {
+					if (strstr(line,"n/a")) continue;
+                                        rxcount++;
+
+                                        while (!isdigit(line[count])) count++;
+
+                                        while (isdigit(line[count]))
+                                        {
+                                                sRXMAXValue[ncount] = line[count];
+                                                ncount++;
+                                                count++;
+                                        }
+                                }
+                                else
+                                        if (strstr(line,"RX:"))
+                                        {
+						if (strstr(line,"n/a")) continue;
+                                                rxcount++;
+
+                                                while (!isdigit(line[count])) count++;
+
+                                                while (isdigit(line[count]))
+                                                {
+                                                        sRXCURRValue[ncount] = line[count];
+                                                        ncount++;
+                                                        count++;
+                                                }
+                                        }
+                                        else
+                                                if (strstr(line,"TX:") && txcount == 0)
+						{
+							if (strstr(line,"n/a")) continue;
+                                                        txcount++;
+
+                                                        while (!isdigit(line[count])) count++;
+
+                                                        while (isdigit(line[count]))
+                                                        {
+                                                                sTXMAXValue[ncount] = line[count];
+                                                                ncount++;
+                                                                count++;
+                                                        }
+                                                }
+                                                else
+                                                        if (strstr(line,"TX:"))
+                                                        {
+								if (strstr(line,"n/a")) continue;
+                                                                txcount++;
+
+                                                                while (!isdigit(line[count])) count++;
+
+                                                                while (isdigit(line[count]))
+                                                                {
+                                                                        sTXCURRValue[ncount] = line[count];
+                                                                        ncount++;
+                                                                        count++;
+                                                                }
+                                                        }
+                                			else
+								if (strstr(line,"Combined:") && combinedcount == 0)
+                                				{
+									if (strstr(line,"n/a")) continue;
+                                        				combinedcount++;
+
+                                        				while (!isdigit(line[count])) count++;
+
+                                        				while (isdigit(line[count]))
+                                        				{
+                                                				sCOMBINEDMAXValue[ncount] = line[count];
+                                                				ncount++;
+                                                				count++;
+                                        				}
+                                				}
+                                				else
+                                        				if (strstr(line,"Combined:"))
+                                        				{
+										if (strstr(line,"n/a")) continue;
+                                                				combinedcount++;
+	
+       					                                        while (!isdigit(line[count])) count++;
+
+                                       					        while (isdigit(line[count]))
+                                                				{
+                                                        				sCOMBINEDCURRValue[ncount] = line[count];
+                                                        				ncount++;
+                                                        				count++;
+                                                				}
+
+										netDevice_combined_channel_cfg_max_val = atoi(sCOMBINEDMAXValue); //always have combined
+                                                                		netDevice_combined_channel_cfg_curr_val = atoi(sCOMBINEDCURRValue);
+
+										if (sTXCURRValue[0] == '\0') //sometimes it's not supported an has n/a - only combined supported
+										{
+											fprintf(tunLogPtr,"*************Only combined supported *******\n");
+											netDevice_only_combined_channel_cfg = 1;
+											break;
+										}
+
+	                                                        		netDevice_rx_channel_cfg_max_val = atoi(sRXMAXValue);
+                                                                		netDevice_rx_channel_cfg_curr_val = atoi(sRXCURRValue);
+
+                                                                		netDevice_tx_channel_cfg_max_val = atoi(sTXMAXValue);
+                                                               			netDevice_tx_channel_cfg_curr_val = atoi(sTXCURRValue);
+										
+                                                                		//should be the last thing I need
+                                                                		break;
+                                        				}
+                                                        		else
+                                                                		continue;
+                        }
+
+                        fclose(nicCfgFPtr);
+                        system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+                }
+
+        if (line)
+                free(line);
+
+	return;
+
+dnrb_support:
+        fprintf(tunLogPtr,"****ethtool -l not supported\n");
+        system("rm -f /tmp/NIC.cfgfile"); //remove file after use
+
+        return;
 }
 
 void fDoRingBufferSize()
@@ -2081,6 +2332,7 @@ void fDoNicTuning(void)
 
 /* numactl --hardware will show number of cores per numa node */
 
+	fDoShowChannels(); //Do thios cause we may change this stiff depending on how ksoftirqd shows uop
 	fprintf(tunLogPtr,"\n%s %s: *****************End of Evaluate NIC configuration*****************\n", ctime_buf, phase2str(current_phase));
 	fprintf(tunLogPtr,  "%s %s: -------------------------------------------------------------------\n\n", ctime_buf, phase2str(current_phase));
 
@@ -2102,6 +2354,8 @@ int user_assess(int argc, char **argv)
 	//fDoGetUserCfgValues();
 
 	//fDoGetDeviceCap();
+	
+	nProc =  fDoGetNproc();
 	numaNode = fDoGetNuma();
 	memset(numaNodeString,0,sizeof(numaNodeString));	
 	fDoGetNumaNodeString(numaNodeString);
