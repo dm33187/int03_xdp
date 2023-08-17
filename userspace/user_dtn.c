@@ -53,7 +53,7 @@ void open_csv_file(void);
 void open_csv_file(void)
 {
 	time_t clk;
-	char ctime_buf[27];
+	char ctime_buf[CTIME_BUF_LEN];
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
 
 	csvLogPtr = fopen("/tmp/csvTuningLog","w");
@@ -72,6 +72,7 @@ void open_csv_file(void)
 	return;
 }
 
+static int vDidSetChannel = 0;
 static int perf_buffer_poll_start = 0;
 static unsigned long prev_total_retrans = 0;
 static time_t total_time_passed = 0;
@@ -1967,6 +1968,32 @@ start:
 		//fprintf(tunLogPtr,"%s %s: DEV %s: TX : %.2f Gb/s RX : %.2f Gb/s\n", ctime_buf, phase2str(current_phase), netDevice, tx_kbits_per_sec/(double)(1048576), rx_kbits_per_sec/(double)(1048576));
 	}
 
+	if (!tx_kbits_per_sec && vDidSetChannel && (vDebugLevel > 0))
+	{
+		char buffer[256];
+		vDidSetChannel = 0;
+		if (!netDevice_only_combined_channel_cfg)
+		{
+			sprintf(buffer,"ethtool -L %s rx %d tx %d  combined %d",netDevice, netDevice_rx_channel_cfg_curr_val, netDevice_tx_channel_cfg_curr_val, 
+																netDevice_combined_channel_cfg_curr_val);
+			current_phase = TUNING;
+			fprintf(tunLogPtr,"%s %s: ***WARNING: File Transfer has stopped... Running the following command to set back %s channels::: %s\n",
+												ms_ctime_buf, phase2str(current_phase), netDevice, buffer);
+			system(buffer);
+			current_phase = LEARNING;
+		}
+		else
+			{
+				sprintf(buffer,"ethtool -L %s combined %d",netDevice,  netDevice_combined_channel_cfg_curr_val);
+				current_phase = TUNING;
+				fprintf(tunLogPtr,"%s %s: ***WARNING: File Transfer has stopped... Running the following command to set back %s channels::: %s\n",
+														ms_ctime_buf, phase2str(current_phase), netDevice, buffer);
+				system(buffer);
+				current_phase = LEARNING;
+			}
+	}
+
+
 	if (vDebugLevel > 1 && average_tx_Gbits_per_sec)
 	{
 		if (!check_bitrate_interval)
@@ -2689,6 +2716,142 @@ finish_up:
 return avg_rtt_ping;
 }
 
+void fDoSetChannels(void);
+void fDoSetChannels(void)
+{
+
+	time_t clk;
+	char ctime_buf[CTIME_BUF_LEN];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	char buffer[256];
+	static unsigned int count = 0;
+
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+
+	if ((count++ % 5) == 0) //check every 5 times so it doesn't become annoying
+	{
+	 if (netDevice_combined_channel_cfg_max_val <= nProc)
+	 {
+		if (netDevice_combined_channel_cfg_max_val)
+		{
+			int combined_to_use = netDevice_combined_channel_cfg_max_val/8;
+			int tx_to_use = netDevice_combined_channel_cfg_max_val - combined_to_use;
+
+			if (!netDevice_only_combined_channel_cfg)
+			{
+				sprintf(buffer,"ethtool -L %s rx 0 tx %d  combined %d",netDevice, tx_to_use, combined_to_use);
+				if (gTuningMode && current_phase == LEARNING) //need to fix so that current_phase always has the right mode
+				{
+					current_phase = TUNING;
+					fprintf(tunLogPtr,"%s %s: ***WARNING: running the following command to fix ksoftirqd resource issue::: %s\n", 
+														ms_ctime_buf, phase2str(current_phase),  buffer);
+					fprintf(tunLogPtr,"%s %s: ***WARNING: Also, please make sure you are running your application using a core in the Nic's NUMA***\n",
+														ms_ctime_buf, phase2str(current_phase));
+					system(buffer);
+					vDidSetChannel = 1;
+					current_phase = LEARNING;
+				}
+				else
+					{
+						fprintf(tunLogPtr,"%s %s: ***WARNING: Please make sure you are running your application using a core in the Nic's NUMA***\n",
+														ms_ctime_buf, phase2str(current_phase));
+						fprintf(tunLogPtr,"%s %s: ***WARNING: If the above is true, please run the following command to fix ksoftirqd resource issue::: %s\n", 
+														ms_ctime_buf, phase2str(current_phase),  buffer);
+					}
+			}
+			else
+				{
+#if 0
+					sprintf(buffer,"ethtool -L %s combined %d",netDevice, combined_to_use);
+					if (gTuningMode && current_phase == LEARNING) //need to fix so that current_phase always has the right mode
+					{
+						current_phase = TUNING;
+						fprintf(tunLogPtr,"%s %s: ***WARNING: running the following command to fix ksoftirqd resource issue::: %s\n", 
+														ms_ctime_buf, phase2str(current_phase),  buffer);
+						system(buffer);
+						vDidSetChannel = 1;
+						current_phase = LEARNING;
+					}
+					else
+						{
+							fprintf(tunLogPtr,"%s %s: ***WARNING: please run the following command to fix ksoftirqd resource issue::: %s\n", 
+															ms_ctime_buf, phase2str(current_phase),  buffer);
+						}
+#endif
+					fprintf(tunLogPtr,"%s %s: ***WARNING: No known fix for ksoftirqd issue on this NIC at this point:::\n", ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING: Please use tools like \"ethtool -L and/or ethtool -X\" to see if you can resolve this issue:::\n", ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING: Also, please make sure you are running your application using a core in the Nic's NUMA***\n", ms_ctime_buf, phase2str(current_phase));
+				}
+		}
+		else
+			{
+				fprintf(tunLogPtr,"%s %s: ***WARNING: can't fix ksoftirqd resource issue with ethtool command at this point***\n", 
+															ms_ctime_buf, phase2str(current_phase));
+				fprintf(tunLogPtr,"%s %s: ***WARNING: However, please make sure you are running your application using a core in the Nic's NUMA***\n",
+															ms_ctime_buf, phase2str(current_phase));
+			}
+	 }
+	 else
+		if (nProc)
+		{
+			if (netDevice_combined_channel_cfg_max_val)
+			{
+				int combined_to_use = nProc/8;
+				int tx_to_use = netDevice_combined_channel_cfg_max_val - combined_to_use;
+
+				if (!netDevice_only_combined_channel_cfg)
+				{
+					sprintf(buffer,"ethtool -L %s rx 0 tx %d  combined %d",netDevice, tx_to_use, combined_to_use);
+					if (gTuningMode && current_phase == LEARNING) //need to fix so that current_phase always has the right mode
+					{
+						current_phase = TUNING;
+						fprintf(tunLogPtr,"%s %s: ***WARNING: running the following command to fix ksoftirqd resource issue::: %s\n", 
+														ms_ctime_buf, phase2str(current_phase),  buffer);
+						fprintf(tunLogPtr,"%s %s: ***WARNING: Also, please make sure you are running your application using a core in the Nic's NUMA***\n",
+																ms_ctime_buf, phase2str(current_phase));
+						system(buffer);
+						vDidSetChannel = 1;
+						current_phase = LEARNING;
+					}
+					else
+						{
+							fprintf(tunLogPtr,"%s %s: ***WARNING: Please make sure you are running your application using a core in the Nic's NUMA***\n",
+														ms_ctime_buf, phase2str(current_phase));
+							fprintf(tunLogPtr,"%s %s: ***WARNING: If the above is true, please run the following command to fix ksoftirqd resource issue::: %s\n", 
+														ms_ctime_buf, phase2str(current_phase),  buffer);
+						}
+				}
+				else
+					{
+#if 0
+						sprintf(buffer,"ethtool -L %s combined %d",netDevice, combined_to_use);
+						if (gTuningMode && (current_phase == LEARNING)) //need to fix so that current_phase always has the right mode
+						{
+							current_phase = TUNING;
+							fprintf(tunLogPtr,"%s %s: ***WARNING: running the following command to fix ksoftirqd resource issue::: %s\n", 
+															ms_ctime_buf, phase2str(current_phase), buffer);
+							system(buffer);
+							vDidSetChannel = 1;
+							current_phase = LEARNING;
+						}
+						else
+							{	
+								fprintf(tunLogPtr,"%s %s: ***WARNING: please run the following command to fix ksoftirqd resource issue::: %s\n", 
+															ms_ctime_buf, phase2str(current_phase), buffer);
+							}
+#endif
+						fprintf(tunLogPtr,"%s %s: ***WARNING: No known fix for ksoftirqd issue on this NIC at this point:::\n", ms_ctime_buf, phase2str(current_phase));
+						fprintf(tunLogPtr,"%s %s: ***WARNING: Please use tools like \"ethtool -L and/or ethtool -X\" to see if you can resolve this issue:::\n", 
+																			ms_ctime_buf, phase2str(current_phase));
+						fprintf(tunLogPtr,"%s %s: ***WARNING: Also, please make sure you are running your application using a core in the Nic's NUMA***\n",
+																			ms_ctime_buf, phase2str(current_phase));
+					}
+			}
+		}
+	}
+}
+
+
 void fDoCheckSoftirqd(void);
 void fDoCheckSoftirqd(void)
 {
@@ -2730,6 +2893,9 @@ void fDoCheckSoftirqd(void)
                 {
 			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 			fprintf(tunLogPtr,"%s %s: ***WARNING ksoftirqd is using >= 60%c of CPU resources::: %s", ms_ctime_buf, phase2str(current_phase), '%', buffer);
+			
+			//sudo ethtool -L netro-switch rx 0 tx 28  combined 4
+			fDoSetChannels();
 		}
 		else
 			continue;
@@ -3431,7 +3597,8 @@ int main(int argc, char **argv)
 #endif
 	vGoodBitrateValue = (((97/(double)100) * netDeviceSpeed)/(double)1000); //97% of NIC speed is a good bitrate threshold
 	vGoodBitrateValueThatDoesntNeedMessage = (((88/(double)100) * netDeviceSpeed)/(double)1000); //Won't print 'BITRATE IS LOW' message in this case - log gets cumbersome
-	fprintf(tunLogPtr, "%s %s: ***vGoodBitrateValue = %.1fGb/s***\n", ms_ctime_buf, phase2str(current_phase), vGoodBitrateValue);
+	fprintf(tunLogPtr, "%s %s: ***vGoodBitrateValue = %.1fGb/s*** //97%% of NIC speed is a good bitrate threshold \n", ms_ctime_buf, phase2str(current_phase), vGoodBitrateValue);
+	fprintf(tunLogPtr, "%s %s: ***Number of CPUs on system = %d***\n", ms_ctime_buf, phase2str(current_phase), nProc);
 	fprintf(tunLogPtr, "%s %s: ***Numa Node for %s is %d***\n", ms_ctime_buf, phase2str(current_phase), netDevice, numaNode);
 	if (numaNodeString[0])
 	{

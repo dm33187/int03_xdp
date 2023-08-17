@@ -52,6 +52,16 @@ extern void fDoNicTuning(void);
 extern void fDoSystemtuning(void);
 extern void fDo_lshw(void);
 extern void fCheck_log_limit(void);
+extern int fDoGetNproc(void);
+extern int nProc;
+
+extern int netDevice_rx_channel_cfg_max_val;
+extern int netDevice_tx_channel_cfg_max_val;
+extern int netDevice_combined_channel_cfg_max_val;
+extern int netDevice_rx_channel_cfg_curr_val;
+extern int netDevice_tx_channel_cfg_curr_val;
+extern int netDevice_combined_channel_cfg_curr_val;
+extern int netDevice_only_combined_channel_cfg;
 
 extern void Pthread_mutex_lock(pthread_mutex_t *);
 extern void Pthread_mutex_unlock(pthread_mutex_t *);
