@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: (GPL-2.0 OR BSD-2-Clause)
 
 USER_TARGETS := user_dtn
+MY_TARGETS := myclient
 
 LIBBPF_DIR = ../libbpf/src/
 COMMON_DIR = ../common/
@@ -11,6 +12,7 @@ COMMON_OBJS += $(COMMON_DIR)/common_libbpf.o
 
 OTHER_OBJS = ./user_assess.o
 OTHER_OBJS += ./wrapsomeunix.o
+MY_OBJS = ./wrapsomeunix.o
 
 FACILIO_OBJS += $(FACILIO_DIR)/lib/facil/fio.o
 FACILIO_OBJS += $(FACILIO_DIR)/lib/facil/fiobj/fiobj_hash.o

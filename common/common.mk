@@ -18,6 +18,8 @@ XDP_C = ${XDP_TARGETS:=.c}
 XDP_OBJ = ${XDP_C:.c=.o}
 USER_C := ${USER_TARGETS:=.c}
 USER_OBJ := ${USER_C:.c=.o}
+MY_C := ${MY_TARGETS:=.c}
+MY_OBJ := ${MY_C:.c=.o}
 
 # Expect this is defined by including Makefile, but define if not
 COMMON_DIR ?= ../common/
@@ -53,7 +55,7 @@ BPF_CFLAGS ?= -I$(LIBBPF_DIR)/build/usr/include/ -I../headers/
 
 LIBS = -l:libbpf.a -lelf -lz -lrt $(USER_LIBS)
 
-all: llvm-check $(USER_TARGETS) $(XDP_OBJ) $(COPY_LOADER) $(COPY_STATS)
+all: llvm-check $(USER_TARGETS) $(XDP_OBJ) $(COPY_LOADER) $(COPY_STATS) $(MY_TARGETS)
 
 #.PHONY: clean $(CLANG) $(LLC)
 .PHONY: clean $(CLANG) 
@@ -114,6 +116,10 @@ $(COMMON_OBJS): %.o: %.h
 $(USER_TARGETS): %: %.c  $(OBJECT_LIBBPF) Makefile $(COMMON_MK) $(COMMON_OBJS) $(OTHER_OBJS) $(FACILIO_OBJS) $(KERN_USER_H) $(EXTRA_DEPS)
 	$(CC) -Wall -Wno-unused-label $(CFLAGS) $(LDFLAGS) -o $@ $(COMMON_OBJS) $(OTHER_OBJS) $(FACILIO_OBJS) -lm -lpthread \
 	 $< $(LIBS)
+
+$(MY_TARGETS): %: %.c  Makefile $(COMMON_MK) $(MY_OBJS) $(EXTRA_DEPS) 
+	$(CC) -Wall -Wno-unused-label $(CFLAGS) $(LDFLAGS)  -o $@ $(MY_OBJS) \
+	 $< $(LIBS) 
 
 $(XDP_OBJ): %.o: %.c  Makefile $(COMMON_MK) $(KERN_USER_H) $(EXTRA_DEPS) $(OBJECT_LIBBPF)
 	$(CLANG) -S \

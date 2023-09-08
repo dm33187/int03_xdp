@@ -57,16 +57,37 @@
 #define	SA	struct sockaddr
 
 //Added for Q-Factor
+#define CTIME_BUF_LEN		27
+#define MS_CTIME_BUF_LEN	48
+
+#if 1
+#define HPNSSH_QFACTOR  1
+#endif
+
 #define TEST_MSG	0
 #define QINFO_MSG	1
+#define HPNSSH_MSG 	2
+
+//For HPNSSH_MSGs value will be whether to do a read or readall or shutdown
+#define HPNSSH_READ	33
+#define HPNSSH_READALL	44
+#define HPNSSH_SHUTDOWN	55
+#define	HPNSSH_START	99
+#define	HPNSSH_DUMMY	166
+
 struct PeerMsg {
 	unsigned int msg_no;
 	unsigned int seq_no;
 	unsigned int value;
+	unsigned int hop_latency;
+	unsigned int queue_occupancy;
+	unsigned int switch_id;
+	char timestamp[MS_CTIME_BUF_LEN];
 	char msg[80];
+	char * pts;
 };
 /*****************/
-void str_cli(int sockfd, struct PeerMsg *sThisMsg);
+int str_cli(int sockfd, struct PeerMsg *sThisMsg);
 void     process_request(int);
 void     read_sock(int);
 //void     str_cli(FILE *, int);
@@ -82,7 +103,7 @@ void	 Bind(int, const SA *, socklen_t);
 int	 Connect(int, const SA *, socklen_t);
 void	 Listen(int, int);
 int	 Socket(int, int, int);
-void	 Writen(int, void *, size_t);
+int	 Writen(int, void *, size_t);
 
 int	 err_sys(const char *, ...);
 #endif	/* __unp_h */

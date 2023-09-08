@@ -183,6 +183,15 @@ time_t calculate_delta_for_csv(void)
 pthread_mutex_t dtn_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t dtn_cond = PTHREAD_COND_INITIALIZER;
 static int cdone = 0;
+#ifdef HPNSSH_QFACTOR
+pthread_mutex_t hpn_ret_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t hpn_ret_cond = PTHREAD_COND_INITIALIZER;
+static int hpnretcdone = 0;
+struct PeerMsg sHpnRetMsg;
+struct PeerMsg sHpnRetMsg2;
+unsigned int hpnRetMsgSeqNo = 0;
+struct PeerMsg sTimeoutMsg;
+#endif
 static unsigned int sleep_count = 1;
 static double vGoodBitrateValue = 0.0;
 static double vGoodBitrateValueThatDoesntNeedMessage = 0.0;
@@ -334,6 +343,7 @@ void sig_int_handler(int signum, siginfo_t *info, void *ptr)
 
 	if (csvLogPtr)
 		fclose(csvLogPtr);
+
 	exit(0);
 }
 
@@ -363,6 +373,19 @@ const char *pin_basedir =  "/sys/fs/bpf";
 
 #include <net/if.h>
 #include <linux/if_link.h> /* depend on kernel-headers installed */
+
+#define NUMMETAVALUES   10000
+typedef struct {
+        char timestamp[MS_CTIME_BUF_LEN];
+        unsigned int hop_latency;
+        unsigned int queue_occupancy;
+	unsigned int switch_id;
+} sMetaData_t[NUMMETAVALUES];
+
+
+sMetaData_t metaData;
+unsigned int vMetaDataCount = 0;
+unsigned int vMetaDataClientCount = 0;
 
 typedef struct {
 	int argc;
@@ -594,53 +617,181 @@ perf_event_loop: {
 		{
 			if (!perf_buffer_poll_start)
 			{
-				if (vDebugLevel == 4)
-        			{
+#if 0
+				Pthread_mutex_lock(&hpn_ret_mutex);
+				//sHpnRetMsg.value = value;
+				hpnRetMsgSeqNo++;
+				sHpnRetMsg.seq_no = htonl(hpnRetMsgSeqNo);
+				hpnretcdone = 1;
+				Pthread_cond_signal(&hpn_ret_cond);
+				Pthread_mutex_unlock(&hpn_ret_mutex);
+#endif
+
 					if ((qinfo_min_value != QINFO_START_MIN_VALUE) && (qinfo_max_value != 0))
 					{
 						if (qinfo_clk_min <= qinfo_clk_max)
-						{ 	//print in this order
-							fprintf(tunLogPtr, "\n%s %s: ***********************FLOW************************", qinfo_ms_ctime_buf_min, phase2str(current_phase));
-							fprintf(tunLogPtr, "\n%s %s: FLOW    : hop_switch_id = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_hop_switch_id_min);
-							fprintf(tunLogPtr, "%s %s: FLOW    : queue_occupancy = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_min_value);
-							fprintf(tunLogPtr, "%s %s: FLOW    : hop_latency = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_hop_latency_min);
-		
-							fprintf(tunLogPtr, "\n%s %s: ***********************FLOW************************", qinfo_ms_ctime_buf_max, phase2str(current_phase));
-							fprintf(tunLogPtr, "\n%s %s: FLOW    : hop_switch_id = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_hop_switch_id_max);
-							fprintf(tunLogPtr, "%s %s: FLOW    : queue_occupancy = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_max_value);
-							fprintf(tunLogPtr, "%s %s: FLOW    : hop_latency = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_hop_latency_max);
-						}
-						else
-							{	//print in this order
-								fprintf(tunLogPtr, "\n%s %s: ***********************FLOW************************", qinfo_ms_ctime_buf_max, phase2str(current_phase));
-								fprintf(tunLogPtr, "\n%s %s: FLOW    : hop_switch_id = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_hop_switch_id_max);
-								fprintf(tunLogPtr, "%s %s: FLOW    : queue_occupancy = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_max_value);
-								fprintf(tunLogPtr, "%s %s: FLOW    : hop_latency = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_hop_latency_max);
+						{ 	
+							Pthread_mutex_lock(&hpn_ret_mutex);
+							sHpnRetMsg.pts = qinfo_ms_ctime_buf_min;
+							sHpnRetMsg.hop_latency = qinfo_hop_latency_min;
+							sHpnRetMsg.queue_occupancy = qinfo_min_value;
+							sHpnRetMsg.switch_id = qinfo_hop_switch_id_min;
+							//hpnretcdone = 1;
+							//Pthread_cond_signal(&hpn_ret_cond);
+							//Pthread_mutex_unlock(&hpn_ret_mutex);
+///****************************************************************************************************	We'll see if a better way after
+							//Pthread_mutex_lock(&hpn_ret_mutex);
+							sHpnRetMsg2.pts = qinfo_ms_ctime_buf_max;
+							sHpnRetMsg2.hop_latency = qinfo_hop_latency_max;
+							sHpnRetMsg2.queue_occupancy = qinfo_max_value;
+							sHpnRetMsg2.switch_id = qinfo_hop_switch_id_max;
+							hpnretcdone = 1;
+							Pthread_cond_signal(&hpn_ret_cond);
+							Pthread_mutex_unlock(&hpn_ret_mutex);
+#if 0
+							memcpy(metaData[vMetaDataCount].timestamp,qinfo_ms_ctime_buf_min,MS_CTIME_BUF_LEN);
+							metaData[vMetaDataCount].hop_latency = qinfo_hop_latency_min;
+							metaData[vMetaDataCount].queue_occupancy = qinfo_min_value;
+							metaData[vMetaDataCount].switch_id = qinfo_hop_switch_id_min;
+						
+							vMetaDataCount++;
+							if (vMetaDataCount == NUMMETAVALUES)
+								vMetaDataCount = 0;
 
+
+							memcpy(metaData[vMetaDataCount].timestamp,qinfo_ms_ctime_buf_max,MS_CTIME_BUF_LEN);
+							metaData[vMetaDataCount].hop_latency = qinfo_hop_latency_max;
+							metaData[vMetaDataCount].queue_occupancy = qinfo_max_value;
+							metaData[vMetaDataCount].switch_id = qinfo_hop_switch_id_max;
+							
+							vMetaDataCount++;
+							if (vMetaDataCount == NUMMETAVALUES)
+								vMetaDataCount = 0;
+#endif
+							if (vDebugLevel == 4)
+							{ 	//print in this order
 								fprintf(tunLogPtr, "\n%s %s: ***********************FLOW************************", qinfo_ms_ctime_buf_min, phase2str(current_phase));
 								fprintf(tunLogPtr, "\n%s %s: FLOW    : hop_switch_id = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_hop_switch_id_min);
 								fprintf(tunLogPtr, "%s %s: FLOW    : queue_occupancy = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_min_value);
 								fprintf(tunLogPtr, "%s %s: FLOW    : hop_latency = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_hop_latency_min);
+		
+								fprintf(tunLogPtr, "\n%s %s: ***********************FLOW************************", qinfo_ms_ctime_buf_max, phase2str(current_phase));
+								fprintf(tunLogPtr, "\n%s %s: FLOW    : hop_switch_id = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_hop_switch_id_max);
+								fprintf(tunLogPtr, "%s %s: FLOW    : queue_occupancy = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_max_value);
+								fprintf(tunLogPtr, "%s %s: FLOW    : hop_latency = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_hop_latency_max);
+							}
+						}
+						else
+							{
+								Pthread_mutex_lock(&hpn_ret_mutex);
+								sHpnRetMsg.pts = qinfo_ms_ctime_buf_max;
+								sHpnRetMsg.hop_latency = qinfo_hop_latency_max;
+								sHpnRetMsg.queue_occupancy = qinfo_max_value;
+								sHpnRetMsg.switch_id = qinfo_hop_switch_id_max;
+							//	hpnretcdone = 1;
+							//	Pthread_cond_signal(&hpn_ret_cond);
+							//	Pthread_mutex_unlock(&hpn_ret_mutex);
+///****************************************************************************************************	We'll see if a better way after
+							//	Pthread_mutex_lock(&hpn_ret_mutex);
+								sHpnRetMsg2.pts = qinfo_ms_ctime_buf_min;
+								sHpnRetMsg2.hop_latency = qinfo_hop_latency_min;
+								sHpnRetMsg2.queue_occupancy = qinfo_min_value;
+								sHpnRetMsg2.switch_id = qinfo_hop_switch_id_min;
+								hpnretcdone = 1;
+								Pthread_cond_signal(&hpn_ret_cond);
+								Pthread_mutex_unlock(&hpn_ret_mutex);
+#if 0
+								memcpy(metaData[vMetaDataCount].timestamp,qinfo_ms_ctime_buf_max,MS_CTIME_BUF_LEN);
+								metaData[vMetaDataCount].hop_latency = qinfo_hop_latency_max;
+								metaData[vMetaDataCount].queue_occupancy = qinfo_max_value;
+								metaData[vMetaDataCount].switch_id = qinfo_hop_switch_id_max;
+							
+								vMetaDataCount++;
+								if (vMetaDataCount == NUMMETAVALUES)
+									vMetaDataCount = 0;
+
+								memcpy(metaData[vMetaDataCount].timestamp,qinfo_ms_ctime_buf_min,MS_CTIME_BUF_LEN);
+								metaData[vMetaDataCount].hop_latency = qinfo_hop_latency_min;
+								metaData[vMetaDataCount].queue_occupancy = qinfo_min_value;
+								metaData[vMetaDataCount].switch_id = qinfo_hop_switch_id_min;
+						
+								vMetaDataCount++;
+								if (vMetaDataCount == NUMMETAVALUES)
+									vMetaDataCount = 0;
+#endif							
+								if (vDebugLevel == 4)
+								{ 	//print in this order
+									fprintf(tunLogPtr, "\n%s %s: ***********************FLOW************************", qinfo_ms_ctime_buf_max, phase2str(current_phase));
+									fprintf(tunLogPtr, "\n%s %s: FLOW    : hop_switch_id = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_hop_switch_id_max);
+									fprintf(tunLogPtr, "%s %s: FLOW    : queue_occupancy = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_max_value);
+									fprintf(tunLogPtr, "%s %s: FLOW    : hop_latency = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_hop_latency_max);
+
+									fprintf(tunLogPtr, "\n%s %s: ***********************FLOW************************", qinfo_ms_ctime_buf_min, phase2str(current_phase));
+									fprintf(tunLogPtr, "\n%s %s: FLOW    : hop_switch_id = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_hop_switch_id_min);
+									fprintf(tunLogPtr, "%s %s: FLOW    : queue_occupancy = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_min_value);
+									fprintf(tunLogPtr, "%s %s: FLOW    : hop_latency = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_hop_latency_min);
+								}
 							}
 					}
 					else
 						{
 							if (qinfo_min_value != QINFO_START_MIN_VALUE)
 							{
-								fprintf(tunLogPtr, "\n%s %s: ***********************FLOW************************", qinfo_ms_ctime_buf_min, phase2str(current_phase));
-								fprintf(tunLogPtr, "\n%s %s: FLOW    : hop_switch_id = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_hop_switch_id_min);
-								fprintf(tunLogPtr, "%s %s: FLOW    : queue_occupancy = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_min_value);
-								fprintf(tunLogPtr, "%s %s: FLOW    : hop_latency = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_hop_latency_min);
+								Pthread_mutex_lock(&hpn_ret_mutex);
+								sHpnRetMsg.pts = qinfo_ms_ctime_buf_min;
+								sHpnRetMsg.hop_latency = qinfo_hop_latency_min;
+								sHpnRetMsg.queue_occupancy = qinfo_min_value;
+								sHpnRetMsg.switch_id = qinfo_hop_switch_id_min;
+								hpnretcdone = 1;
+								Pthread_cond_signal(&hpn_ret_cond);
+								Pthread_mutex_unlock(&hpn_ret_mutex);
+#if 0
+								memcpy(metaData[vMetaDataCount].timestamp,qinfo_ms_ctime_buf_min,MS_CTIME_BUF_LEN);
+								metaData[vMetaDataCount].hop_latency = qinfo_hop_latency_min;
+								metaData[vMetaDataCount].queue_occupancy = qinfo_min_value;
+								metaData[vMetaDataCount].switch_id = qinfo_hop_switch_id_min;
+						
+								vMetaDataCount++;
+								if (vMetaDataCount == NUMMETAVALUES)
+									vMetaDataCount = 0;
+#endif
+								if (vDebugLevel == 4)
+								{
+									fprintf(tunLogPtr, "\n%s %s: ***********************FLOW************************", qinfo_ms_ctime_buf_min, phase2str(current_phase));
+									fprintf(tunLogPtr, "\n%s %s: FLOW    : hop_switch_id = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_hop_switch_id_min);
+									fprintf(tunLogPtr, "%s %s: FLOW    : queue_occupancy = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_min_value);
+									fprintf(tunLogPtr, "%s %s: FLOW    : hop_latency = %u\n",qinfo_ms_ctime_buf_min, phase2str(current_phase), qinfo_hop_latency_min);
+								}
 							}
 							else
 								{ //must be this
-									fprintf(tunLogPtr, "\n%s %s: ***********************FLOW************************", qinfo_ms_ctime_buf_max, phase2str(current_phase));
-									fprintf(tunLogPtr, "\n%s %s: FLOW    : hop_switch_id = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_hop_switch_id_max);
-									fprintf(tunLogPtr, "%s %s: FLOW    : queue_occupancy = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_max_value);
-									fprintf(tunLogPtr, "%s %s: FLOW    : hop_latency = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_hop_latency_max);
+									Pthread_mutex_lock(&hpn_ret_mutex);
+									sHpnRetMsg.pts = qinfo_ms_ctime_buf_max;
+									sHpnRetMsg.hop_latency = qinfo_hop_latency_max;
+									sHpnRetMsg.queue_occupancy = qinfo_max_value;
+									sHpnRetMsg.switch_id = qinfo_hop_switch_id_max;
+									hpnretcdone = 1;
+									Pthread_cond_signal(&hpn_ret_cond);
+									Pthread_mutex_unlock(&hpn_ret_mutex);
+#if 0
+									memcpy(metaData[vMetaDataCount].timestamp,qinfo_ms_ctime_buf_max,MS_CTIME_BUF_LEN);
+									metaData[vMetaDataCount].hop_latency = qinfo_hop_latency_max;
+									metaData[vMetaDataCount].queue_occupancy = qinfo_max_value;
+									metaData[vMetaDataCount].switch_id = qinfo_hop_switch_id_max;
+							
+									vMetaDataCount++;
+									if (vMetaDataCount == NUMMETAVALUES)
+										vMetaDataCount = 0;
+#endif
+									if (vDebugLevel == 4)
+									{
+										fprintf(tunLogPtr, "\n%s %s: ***********************FLOW************************", qinfo_ms_ctime_buf_max, phase2str(current_phase));
+										fprintf(tunLogPtr, "\n%s %s: FLOW    : hop_switch_id = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_hop_switch_id_max);
+										fprintf(tunLogPtr, "%s %s: FLOW    : queue_occupancy = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_max_value);
+										fprintf(tunLogPtr, "%s %s: FLOW    : hop_latency = %u\n",qinfo_ms_ctime_buf_max, phase2str(current_phase), qinfo_hop_latency_max);
+									}
 								}
 						}
-				}
 			}
 		}
 	}
@@ -1185,27 +1336,7 @@ void check_req(http_s *h, char aResp[])
 		fprintf(tunLogPtr,"%s %s: ***New queue occupancy delta value is *%u***\n", ms_ctime_buf, phase2str(current_phase), vQUEUE_OCCUPANCY_DELTA);
 		goto after_check;
 	}
-#if 0	
-	if (strstr(pReqData,"GET /-ct#q_user_occ#"))
-	{
-		/* Change the value of the queue occupancy user info */
-		__u32 vNewQueueOccupancyUserInfo = 0;
-		char *p = (pReqData + sizeof("GET /-ct#q_user_occ#")) - 1;
-		while (isdigit(*p))
-		{
-			aNumber[count++] = *p;
-			p++;
-		}
 
-		vNewQueueOccupancyUserInfo = strtoul(aNumber, (char **)0, 10);
-		sprintf(aResp,"Changed queue occupancy user info from %u to %u!\n", vQinfoUserValue, vNewQueueOccupancyUserInfo);
-		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change queue user info from %u to %u***\n", ms_ctime_buf, phase2str(current_phase), vQinfoUserValue, vNewQueueOccupancyUserInfo);
-		vQinfoUserValue = vNewQueueOccupancyUserInfo;
-		fprintf(tunLogPtr,"%s %s: ***New queue occupancy user info value is *%u***\n", ms_ctime_buf, phase2str(current_phase), vQinfoUserValue);
-		goto after_check;
-	}
-#endif			
 	if (strstr(pReqData,"GET /-ct#retrans_rate#"))
 	{
 		/* Change the value of the retransmits allwoed per sec */
@@ -1898,6 +2029,297 @@ double fGetAppBandWidth()
 
 return found;
 }
+
+#ifdef HPNSSH_QFACTOR
+void fDoHpnRead(unsigned int val, int sockfd);
+void fDoHpnReadAll(unsigned int val, int sockfd);
+void fDoHpnShutdown(unsigned int val, int sockfd);
+void fDoHpnStart(unsigned int val, int sockfd);
+void fDoHpnAssessment(unsigned int val, int sockfd);
+
+void fDoHpnRead(unsigned int val, int sockfd)
+{
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	struct PeerMsg sRetMsg;
+	struct PeerMsg sRetMsg2;
+	int y,n;
+	struct timeval tv;
+	struct timespec ts;
+	int saveerrno = 0;
+	char mychar;
+	int two = 0;
+	
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	if (vDebugLevel > 6)
+		fprintf(tunLogPtr,"%s %s: ***INFO***: In fDoHpnRead(), value is %u***\n", ms_ctime_buf, phase2str(current_phase), val);
+	
+	strcpy(sRetMsg.msg, "Hello there!!! Got your Read message..., Here's some data\n");
+	sRetMsg.msg_no = htonl(HPNSSH_MSG);
+	sRetMsg.value = htonl(133);;
+
+	strcpy(sRetMsg2.msg, "Hello there!!! Got your Read message..., Here's some data\n");
+	sRetMsg2.msg_no = htonl(HPNSSH_MSG);
+	sRetMsg2.value = htonl(133);;
+
+read_again:
+	Pthread_mutex_lock(&hpn_ret_mutex);
+	if (gettimeofday(&tv, NULL) < 0)
+		err_sys("gettimeofday error");
+	ts.tv_sec = tv.tv_sec + 5; //seconds in future
+	ts.tv_nsec = tv.tv_usec * 1000; //microsec to nanosec
+
+	while(hpnretcdone == 0)
+		if ( (n = pthread_cond_timedwait(&hpn_ret_cond, &hpn_ret_mutex, &ts)) != 0)
+		{
+			saveerrno = errno;
+			if (vDebugLevel > 6)
+				fprintf(tunLogPtr,"%s %s: ***INFO***: In fDoHpnRead(),  errno = %d, n= %d**\n", ms_ctime_buf, phase2str(current_phase), saveerrno,n);
+
+			if (n == ETIME || n == ETIMEDOUT) //apparently n could also be ETIME although man notes only mention ETIMEDOUT
+			{
+				if (vDebugLevel > 5)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: In fDoHpnRead(), wait condition timed out errno = %d, n= %d**\n", ms_ctime_buf, phase2str(current_phase), saveerrno,n);
+					fflush(tunLogPtr);
+				}
+
+				Pthread_mutex_unlock(&hpn_ret_mutex); //release the Kraken
+				//goto read_again;
+				y = recv(sockfd, &mychar, 1, MSG_DONTWAIT|MSG_PEEK);
+				saveerrno = errno;
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: In fDoHpnRead(), wait timed out errno = %d, y= %d**\n", ms_ctime_buf, phase2str(current_phase), saveerrno,y);
+				fflush(tunLogPtr);
+				if (saveerrno && !y) //cpnnection dropped on client side
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: client closed connection, returning from read ffDoHpnRead()****\n", ms_ctime_buf, phase2str(current_phase));
+				fflush(tunLogPtr);
+				return;
+				}
+				else
+					goto read_again;
+
+				//y = str_cli(sockfd, &sTimeoutMsg);
+				//return;
+			}
+                }	
+		//Pthread_cond_wait(&hpn_ret_cond, &hpn_ret_mutex);
+	
+	memcpy(sRetMsg.timestamp, sHpnRetMsg.pts, MS_CTIME_BUF_LEN);
+	sRetMsg.hop_latency = htonl(sHpnRetMsg.hop_latency);
+	sRetMsg.queue_occupancy = htonl(sHpnRetMsg.queue_occupancy);
+	sRetMsg.switch_id = htonl(sHpnRetMsg.switch_id);
+
+	if(sHpnRetMsg2.pts)
+	{
+		memcpy(sRetMsg2.timestamp, sHpnRetMsg2.pts, MS_CTIME_BUF_LEN);
+       		sRetMsg2.hop_latency = htonl(sHpnRetMsg2.hop_latency);
+        	sRetMsg2.queue_occupancy = htonl(sHpnRetMsg2.queue_occupancy);
+        	sRetMsg2.switch_id = htonl(sHpnRetMsg2.switch_id);
+
+		sHpnRetMsg2.pts = 0;
+		two = 1;
+	}
+	
+	hpnretcdone = 0;
+	Pthread_mutex_unlock(&hpn_ret_mutex);
+#if 0	
+	if (!str_cli(sockfd, &sRetMsg))
+		goto read_again;
+	
+	fprintf(tunLogPtr,"%s %s: ***WARNING***: client closed connection, EPIPE error???****\n", ms_ctime_buf, phase2str(current_phase));
+	fflush(tunLogPtr);
+#endif
+	if (two)
+	{
+		two = 0;
+		y = str_cli(sockfd, &sRetMsg);
+		y = str_cli(sockfd, &sRetMsg2);
+	}
+	else
+		y = str_cli(sockfd, &sRetMsg);
+
+return;
+}
+
+void fDoHpnReadAll(unsigned int val, int sockfd)
+{
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	struct PeerMsg sRetMsg;
+	struct PeerMsg sRetMsg2;
+	int y,n;
+	struct timeval tv;
+	struct timespec ts;
+	int saveerrno = 0;
+	char mychar;
+	int two = 0;
+	
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	if (vDebugLevel > 6)
+		fprintf(tunLogPtr,"%s %s: ***INFO***: In fDoHpnReadAll(), value is %u***\n", ms_ctime_buf, phase2str(current_phase), val);
+	
+	strcpy(sRetMsg.msg, "Hello there!!! Got your ReadAll message..., Here's some data\n");
+	sRetMsg.msg_no = htonl(HPNSSH_MSG);
+	sRetMsg.value = htonl(144);;
+
+	strcpy(sRetMsg2.msg, "Hello there!!! Got your ReadAll message..., Here's some data\n");
+	sRetMsg2.msg_no = htonl(HPNSSH_MSG);
+	sRetMsg2.value = htonl(144);;
+
+read_again:
+	Pthread_mutex_lock(&hpn_ret_mutex);
+	if (gettimeofday(&tv, NULL) < 0)
+		err_sys("gettimeofday error");
+	ts.tv_sec = tv.tv_sec + 5; //seconds in future
+	ts.tv_nsec = tv.tv_usec * 1000; //microsec to nanosec
+
+	while(hpnretcdone == 0)
+		if ( (n = pthread_cond_timedwait(&hpn_ret_cond, &hpn_ret_mutex, &ts)) != 0)
+		{
+			saveerrno = errno;
+			if (vDebugLevel > 6)
+				fprintf(tunLogPtr,"%s %s: ***INFO***: In fDoHpnReadAll(),  errno = %d, n= %d**\n", 
+									ms_ctime_buf, phase2str(current_phase), saveerrno,n);
+
+			if (n == ETIME || n == ETIMEDOUT) //apparently n could also be ETIME although man notes only mention ETIMEDOUT
+			{
+				if (vDebugLevel > 5)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: In fDoHpnReadAll(), wait condition timed out errno = %d, n= %d**\n", 
+													ms_ctime_buf, phase2str(current_phase), saveerrno,n);
+					fflush(tunLogPtr);
+				}
+
+				Pthread_mutex_unlock(&hpn_ret_mutex); //release the Kraken
+				//goto read_again;
+				y = recv(sockfd, &mychar, 1, MSG_DONTWAIT|MSG_PEEK);
+				saveerrno = errno;
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: In fDoHpnReadAll(), wait timed out errno = %d, y= %d**\n", 
+											ms_ctime_buf, phase2str(current_phase), saveerrno,y);
+				fflush(tunLogPtr);
+				if (saveerrno && !y) //cpnnection dropped on client side
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: client closed connection, returning from read fDoHpnReadAll()****\n", 
+													ms_ctime_buf, phase2str(current_phase));
+				fflush(tunLogPtr);
+				return;
+				}
+				else
+					goto read_again;
+
+				//y = str_cli(sockfd, &sTimeoutMsg);
+				//return;
+			}
+                }	
+	
+	memcpy(sRetMsg.timestamp, sHpnRetMsg.pts, MS_CTIME_BUF_LEN);
+	sRetMsg.hop_latency = htonl(sHpnRetMsg.hop_latency);
+	sRetMsg.queue_occupancy = htonl(sHpnRetMsg.queue_occupancy);
+	sRetMsg.switch_id = htonl(sHpnRetMsg.switch_id);
+	
+	if(sHpnRetMsg2.pts)
+	{
+		memcpy(sRetMsg2.timestamp, sHpnRetMsg2.pts, MS_CTIME_BUF_LEN);
+       		sRetMsg2.hop_latency = htonl(sHpnRetMsg2.hop_latency);
+        	sRetMsg2.queue_occupancy = htonl(sHpnRetMsg2.queue_occupancy);
+        	sRetMsg2.switch_id = htonl(sHpnRetMsg2.switch_id);
+
+		sHpnRetMsg2.pts = 0;
+		two = 1;
+	}
+
+	hpnretcdone = 0;
+	Pthread_mutex_unlock(&hpn_ret_mutex);
+#if 1	
+	if (two)
+	{
+		two = 0;
+		if ((!str_cli(sockfd, &sRetMsg)) && (!str_cli(sockfd, &sRetMsg2)))
+			goto read_again;
+	}
+	else
+		{	
+			if (!str_cli(sockfd, &sRetMsg))
+				goto read_again;
+		}
+	
+	fprintf(tunLogPtr,"%s %s: ***WARNING***: client closed connection, EPIPE error???****\n", ms_ctime_buf, phase2str(current_phase));
+	fflush(tunLogPtr);
+#endif
+//	y = str_cli(sockfd, &sRetMsg);
+return;
+}
+
+void fDoHpnShutdown(unsigned int val, int sockfd)
+{
+        time_t clk;
+        char ctime_buf[27];
+        char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	int check = 0;
+        
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+        fprintf(tunLogPtr,"%s %s: ***INFO***: In fDoHpnShutdown(), value is %u, Shutting down HPNSSH-QFACTOR  Server socket ***\n", ms_ctime_buf, phase2str(current_phase), val);
+#if 1
+	check = shutdown(sockfd, SHUT_WR);
+        //close(sockfd); //- use shutdown instead of close
+        if (!check)
+        	read_sock(sockfd); //final read to wait on close from other end
+        else
+        	fprintf(tunLogPtr,"%s %s: ***shutdoooown failed to HPNSSN_QFACTOR server..., check = %d***\n", ms_ctime_buf, phase2str(current_phase), check);
+#endif
+return;
+}
+
+void fDoHpnStart(unsigned int val, int sockfd)
+{
+        time_t clk;
+        char ctime_buf[27];
+        char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	struct PeerMsg sRetMsg;
+       
+	memset(&sRetMsg,0,sizeof(sRetMsg));
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	if (vDebugLevel > 1)
+        	fprintf(tunLogPtr,"%s %s: ***INFO***: In fDoHpnStart(), value is %u***\n", ms_ctime_buf, phase2str(current_phase), val);
+
+	strcpy(sRetMsg.msg, "Hello there!!! Got your start message...\n");
+        sRetMsg.msg_no = htonl(HPNSSH_MSG);
+        sRetMsg.value = htonl(199);;
+	str_cli(sockfd, &sRetMsg);
+return;
+}
+
+void fDoHpnAssessment(unsigned int val, int sockfd)
+{
+        time_t clk;
+        char ctime_buf[27];
+        char ms_ctime_buf[MS_CTIME_BUF_LEN];
+        
+	switch (val) {
+		case  HPNSSH_READ:
+			fDoHpnRead(val, sockfd);
+			break;
+		case HPNSSH_READALL:
+			fDoHpnReadAll(val, sockfd);
+			break;
+		case HPNSSH_SHUTDOWN:
+			fDoHpnShutdown(val, sockfd);
+			break;
+		case HPNSSH_START:
+			fDoHpnStart(val, sockfd);
+			break;
+		default:
+			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+        		fprintf(tunLogPtr,"%s %s: ***WARNING***: Invalid Hpnmessage value from client. Value is %u***\n", ms_ctime_buf, phase2str(current_phase), val);
+			break;
+	}
+
+return;
+}
+#endif
 
 #if 1
 void fDoQinfoAssessment(unsigned int val);
@@ -3439,6 +3861,57 @@ Readn(int fd, void *ptr, size_t nbytes)
         return(n);
 }
 
+#ifdef HPNSSH_QFACTOR
+void * doProcessHpnClientReq(void * arg)
+{
+	ssize_t	n;
+	struct PeerMsg	from_cli;
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+
+	int sockfd = (int)arg;
+
+	pthread_detach(pthread_self());
+
+	for ( ; ; ) 
+	{
+		if ( (n = Readn(sockfd, &from_cli, sizeof(from_cli))) == 0)
+		{
+			fprintf(tunLogPtr,"\n%s %s: ***Hpn Client Connection closed***\n", ms_ctime_buf, phase2str(current_phase));
+			fflush(tunLogPtr);
+
+			Close(sockfd);
+			return (NULL);         /* connection closed by other end */
+		}
+
+		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+#ifdef HPNSSH_QFACTOR
+		if (ntohl(from_cli.msg_no) == HPNSSH_MSG)
+		{
+			if (vDebugLevel > 6)
+			{
+				fprintf(tunLogPtr,"\n%s %s: ***Received Hpnssh message %u from Hpnssh Client...***\n", 
+									ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.seq_no));
+				fprintf(tunLogPtr,"%s %s: ***msg_no = %d, msg value = %u, msg buf = %s\n", 
+						ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.msg_no), ntohl(from_cli.value), from_cli.msg);
+			}
+				
+			fDoHpnAssessment(ntohl(from_cli.value), sockfd);
+		}
+#endif
+			else
+				if (vDebugLevel > 0)
+				{
+					fprintf(tunLogPtr,"\n%s %s: ***Received a message %u from some Hpn client???...***\n", ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.seq_no));
+					fprintf(tunLogPtr,"%s %s: ***msg_no = %d, msg buf = %s", ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.msg_no), from_cli.msg);
+				}
+
+		fflush(tunLogPtr);
+	}
+}
+#endif
+
 void
 process_request(int sockfd)
 {
@@ -3451,7 +3924,9 @@ process_request(int sockfd)
 	for ( ; ; ) 
 	{
 		if ( (n = Readn(sockfd, &from_cli, sizeof(from_cli))) == 0)
+		{
 			return;         /* connection closed by other end */
+		}
 
 		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 		if (ntohl(from_cli.msg_no) == QINFO_MSG)
@@ -3467,13 +3942,125 @@ process_request(int sockfd)
 		else
 			if (vDebugLevel > 0)
 			{
-				fprintf(tunLogPtr,"\n%s %s: ***Received message %u from destination DTN...***\n", ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.seq_no));
-				fprintf(tunLogPtr,"%s %s: ***msg_no = %d, msg buf = %s", ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.msg_no), from_cli.msg);
+				fprintf(tunLogPtr,"\n%s %s: ***Received a message %u from destination DTN...***\n", 
+								ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.seq_no));
+				fprintf(tunLogPtr,"%s %s: ***msg_no = %d, msg buf = %s", 
+								ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.msg_no), from_cli.msg);
 			}
 
 		fflush(tunLogPtr);
 	}
 }
+
+#ifdef HPNSSH_QFACTOR
+void * doHandleHpnsshQfactorEnv(void * vargp)
+{
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	int listenfd, connfd;
+	pthread_t tid;
+	socklen_t clilen;
+	struct sockaddr_in cliaddr, servaddr;
+	
+#if 1
+			struct sockaddr_in peeraddr;
+			socklen_t peeraddrlen;
+			struct sockaddr_in localaddr;
+			socklen_t localaddrlen;
+
+			peeraddrlen = sizeof(peeraddr);
+			localaddrlen = sizeof(localaddr);
+#endif
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***Starting Listener for receiving messages from HPNSSH...***\n", ms_ctime_buf, phase2str(current_phase));
+	fflush(tunLogPtr);
+	
+	listenfd = Socket(AF_INET, SOCK_STREAM, 0);
+
+	bzero(&servaddr, sizeof(servaddr));
+	servaddr.sin_family      = AF_INET;
+	servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+	servaddr.sin_port        = htons(gSource_HpnsshQfactor_Port);
+
+	Bind(listenfd, (SA *) &servaddr, sizeof(servaddr));
+	Listen(listenfd, LISTENQ);
+	
+	for ( ; ; ) 
+	{
+		clilen = sizeof(cliaddr);
+		if ( (connfd = accept(listenfd, (SA *) &cliaddr, &clilen)) < 0) 
+		{
+			if (errno == EINTR)
+				continue;  /* back to for() */
+			else
+				err_sys("accept error");
+		}
+#if 1
+		fprintf(tunLogPtr,"%s %s: ***Accepted connection with Listener for receiving messages from HPNSSH...***\n", ms_ctime_buf, phase2str(current_phase));
+		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+
+		int retval = getpeername(connfd, (struct sockaddr *) &peeraddr, &peeraddrlen);
+		if (retval == -1) 
+		{
+			fprintf(tunLogPtr,"%s %s: ***Peer error:***\n", ms_ctime_buf, phase2str(current_phase));
+		//	perror("getpeername()");
+		}
+		else
+			{
+				char *peeraddrpresn = inet_ntoa(peeraddr.sin_addr);
+				//total_time_passed = 0;
+				if (vDebugLevel > 1)
+				{
+					fprintf(tunLogPtr,"%s %s: ***Peer information: ip long %s\n", ms_ctime_buf, phase2str(current_phase), aDest_Ip2_Binary);
+					fprintf(tunLogPtr,"%s %s: ***Peer information:\n", ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***Peer Address Family: %d\n", ms_ctime_buf, phase2str(current_phase), peeraddr.sin_family);
+					fprintf(tunLogPtr,"%s %s: ***Peer Port: %d\n", ms_ctime_buf, phase2str(current_phase), peeraddr.sin_port);
+					fprintf(tunLogPtr,"%s %s: ***Peer IP Address: %s***\n\n", ms_ctime_buf, phase2str(current_phase), peeraddrpresn);
+				}
+			}
+
+		retval = getsockname(connfd, (struct sockaddr *) &localaddr, &localaddrlen);
+		if (retval == -1) 
+		{
+			fprintf(tunLogPtr,"%s %s: ***sock error:***\n", ms_ctime_buf, phase2str(current_phase));
+		}
+		else
+			{
+				char *localaddrpresn = inet_ntoa(localaddr.sin_addr);
+
+				if (vDebugLevel > 1)
+				{
+					fprintf(tunLogPtr,"%s %s: ***Socket information:\n", ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***Local Address Family: %d\n", ms_ctime_buf, phase2str(current_phase), localaddr.sin_family);
+					fprintf(tunLogPtr,"%s %s: ***Local Port: %d\n", ms_ctime_buf, phase2str(current_phase), ntohs(localaddr.sin_port));
+					fprintf(tunLogPtr,"%s %s: ***Local IP Address: %s***\n\n", ms_ctime_buf, phase2str(current_phase), localaddrpresn);
+				}
+				//strcpy(aLocal_Ip,localaddrpresn);
+			}
+
+		fflush(tunLogPtr);
+#endif
+
+
+#if 0
+		if ( (childpid = Fork()) == 0) 
+		{        /* child process */
+
+			Close(listenfd); /* close listening socket */
+			process_request(connfd);/* process the request */
+			exit(0);
+		}
+#endif	
+		pthread_create(&tid, NULL, &doProcessHpnClientReq, (void *) connfd);
+		//process_request(connfd);/* process the request */
+		
+		//Close(connfd); /* parent closes connected socket */
+	}
+
+	return ((char *)0);
+}
+#endif
 
 void * fDoRunGetMessageFromPeer(void * vargp)
 {
@@ -3599,10 +4186,10 @@ void read_sock(int sockfd)
 	}
 }
 
-void str_cli(int sockfd, struct PeerMsg *sThisMsg) //str_cli09
+int str_cli(int sockfd, struct PeerMsg *sThisMsg) //str_cli09
 {
-	Writen(sockfd, sThisMsg, sizeof(struct PeerMsg));
-	return;
+	int y = Writen(sockfd, sThisMsg, sizeof(struct PeerMsg));
+	return y;
 }
 
 void * fDoRunSendMessageToPeer(void * vargp)
@@ -3804,6 +4391,7 @@ int main(int argc, char **argv)
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 	current_phase = LEARNING;
 
+	memset(metaData,0,sizeof(metaData));
 	memset(qinfo_ms_ctime_buf_min,0,sizeof(qinfo_ms_ctime_buf_min));
 	memset(qinfo_ms_ctime_buf_max,0,sizeof(qinfo_ms_ctime_buf_max));
 	memset(&sMsg,0,sizeof(sMsg));
@@ -3851,8 +4439,27 @@ int main(int argc, char **argv)
 	vRetFromRunFindRetransmissionRateThread = pthread_create(&doRunFindRetransmissionRateThread_id, NULL, doRunFindRetransmissionRate, &sArgv); 
 
 #ifdef HPNSSH_QFACTOR
-	//Get Ready to accept connects from hpnssh process
+	//Handle messages from hpnssh client
 	vRetFromHandleHpnsshQfactorEnvThread = pthread_create(&doHandleHpnsshQfactorEnvThread_id, NULL, doHandleHpnsshQfactorEnv, &sArgv);
+	memset(&sHpnRetMsg,0,sizeof(sHpnRetMsg));
+	strcpy(sHpnRetMsg.msg, "Hello there!!! This is a Hpn msg...\n");
+	sHpnRetMsg.msg_no = htonl(HPNSSH_MSG);
+
+	memset(&sHpnRetMsg2,0,sizeof(sHpnRetMsg));
+	strcpy(sHpnRetMsg2.msg, "Hello there!!! This is a Hpn msg...\n");
+	sHpnRetMsg2.msg_no = htonl(HPNSSH_MSG);
+
+	memset(&sTimeoutMsg,0,sizeof(sTimeoutMsg));
+	strcpy(sTimeoutMsg.msg, "Hello there!!! This is  a dummy message ..., Here's some data\n");
+        sTimeoutMsg.msg_no = htonl(HPNSSH_MSG);
+        sTimeoutMsg.value = htonl(HPNSSH_DUMMY);;
+        memcpy(sTimeoutMsg.timestamp, ms_ctime_buf, MS_CTIME_BUF_LEN);
+        sTimeoutMsg.hop_latency = htonl(1);
+        sTimeoutMsg.queue_occupancy = htonl(2);
+        sTimeoutMsg.switch_id = htonl(3);
+        sTimeoutMsg.seq_no = htonl(4);
+
+	//Send messages tp HpnsshQfactor server for simulated testing
 #endif
 	if (vRetFromRunBpfThread == 0)
     		vRetFromRunBpfJoin = pthread_join(doRunBpfCollectionThread_id, NULL);

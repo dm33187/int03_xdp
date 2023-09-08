@@ -3,8 +3,6 @@
 //extern enum workflow_phases;
 
 #define WORKFLOW_NAMES_MAX	4
-#define CTIME_BUF_LEN		27
-#define MS_CTIME_BUF_LEN	48
 
 enum workflow_phases {
         STARTING,
@@ -34,6 +32,7 @@ extern enum workflow_phases current_phase;
 extern int gInterval;
 extern int gAPI_listen_port;
 extern int gSource_Dtn_Port;
+extern int gSource_HpnsshQfactor_Port;
 extern char gTuningMode;
 extern char netDevice[];
 extern char *gNic_to_use;

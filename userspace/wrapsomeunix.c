@@ -177,11 +177,18 @@ writen(int fd, const void *vptr, size_t n)
 }
 /* end writen */
 
-void
+int
 Writen(int fd, void *ptr, size_t nbytes)
 {
         if (writen(fd, ptr, nbytes) != nbytes)
-                err_sys("writen error");
+	{
+		if (errno == EPIPE)
+			return(1);
+		else
+                	err_sys("writen error");
+	}
+	
+	return 0;
 }
 
 const char *
