@@ -27,6 +27,7 @@ int gInterval = 500000; //default
 int vUseEvalutaionTimerDefaultValue = 0;
 int gAPI_listen_port = 5523; //default listening port
 int gSource_Dtn_Port = 5524; //default listening port
+int gSource_HpnsshQfactor_Port = 5525; //default listening port
 int netDeviceSpeed = 0;
 int numaNode = 0;
 int nProc = 0;
@@ -71,7 +72,7 @@ const char *phase2str(enum workflow_phases phase)
 }
 
 /* Must change NUMUSERVALUES below if adding more values */
-#define NUMUSERVALUES	11
+#define NUMUSERVALUES	12
 #define USERVALUEMAXLENGTH	256
 typedef struct {
 	char aUserValues[USERVALUEMAXLENGTH];
@@ -89,7 +90,8 @@ sUserValues_t userValues = {{"evaluation_timer", "500000", "-1"},
 			{"maxnum_tuning_logs","10","-1"},
 			{"source_dtn_port","5524","-1"},
 			{"nic_to_use","na","-1"},
-			{"nic_attach_type","xdpoffload","-1"}
+			{"nic_attach_type","xdpoffload","-1"},
+			{"source_hpnssh_qfactor_port","5525","-1"}
 			};
 
 void fCheck_log_limit(void)
@@ -295,7 +297,7 @@ void fDoGetUserCfgValues(void)
 										if (strcmp(userValues[count].aUserValues,"source_dtn_port") == 0)
 										{
 											int cfg_val = atoi(userValues[count].cfg_value);
-											if (cfg_val == 0) //wasn't set properly - error
+											if (cfg_val == -1) //no value in txt file
 												gSource_Dtn_Port = atoi(userValues[count].default_val);
 											else
 												gSource_Dtn_Port = cfg_val;
@@ -317,6 +319,15 @@ void fDoGetUserCfgValues(void)
 													else
 														gNic_attach_type = userValues[count].cfg_value;
 												}
+												else
+													if (strcmp(userValues[count].aUserValues,"source_hpnssh_qfactor_port") == 0)
+													{
+														int cfg_val = atoi(userValues[count].cfg_value);
+														if (cfg_val == -1) //no value in txt file
+															gSource_HpnsshQfactor_Port = atoi(userValues[count].default_val);
+														else
+															gSource_HpnsshQfactor_Port = cfg_val;
+													}
 	}
 
 	gettime(&clk, ctime_buf);

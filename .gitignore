@@ -22,3 +22,4 @@ testing/modules/tuningMod/tuningModule.ko
 testing/modules/tuningMod/tuningModule.mod
 testing/modules/tuningMod/tuningModule.mod.c
 userspace/user_dtn
+userspace/myclient

@@ -7,5 +7,6 @@ apply_default_system_tuning	n
 make_default_system_tuning_perm n
 maxnum_tuning_logs		10
 source_dtn_port			5524
+source_hpnssh_qfactor_port	5525
 nic_to_use			no-default
 nic_attach_type			xdpoffload
