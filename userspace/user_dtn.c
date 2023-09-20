@@ -26,6 +26,30 @@
 #include "unp.h"
 #include "user_dtn.h"
 
+
+#ifdef HPNSSH_QFACTOR_BINN
+#include "binncli.h"
+void fMake_Binn_Server_Object(struct PeerMsg *pMsg, binn * obj)
+{
+	binn_object_set_uint32(obj, "msg_type", pMsg->msg_no);
+	binn_object_set_uint32(obj, "op", pMsg->value);
+	binn_object_set_uint32(obj, "hop_latency", pMsg->hop_latency);
+	binn_object_set_uint32(obj, "queue_occupancy", pMsg->queue_occupancy);
+	binn_object_set_uint32(obj, "switch_id", pMsg->switch_id);
+	binn_object_set_str(obj, "timestamp", pMsg->timestamp);
+        
+	return;
+}
+
+void fRead_Binn_Client_Object(struct ClientBinnMsg *pMsg, binn * obj)
+{
+	pMsg->msg_type = binn_object_uint32(obj, "msg_type");
+	pMsg->op = binn_object_uint32(obj, "op");
+	
+	return;
+}
+#endif
+
 FILE * tunLogPtr = 0;
 FILE * csvLogPtr = 0;
 
@@ -626,13 +650,14 @@ perf_event_loop: {
 				Pthread_cond_signal(&hpn_ret_cond);
 				Pthread_mutex_unlock(&hpn_ret_mutex);
 #endif
-
 					if ((qinfo_min_value != QINFO_START_MIN_VALUE) && (qinfo_max_value != 0))
 					{
 						if (qinfo_clk_min <= qinfo_clk_max)
 						{ 	
 							Pthread_mutex_lock(&hpn_ret_mutex);
-							sHpnRetMsg.pts = qinfo_ms_ctime_buf_min;
+							
+//							sHpnRetMsg.pts = qinfo_ms_ctime_buf_min;
+							memcpy(sHpnRetMsg.timestamp,qinfo_ms_ctime_buf_min,MS_CTIME_BUF_LEN);
 							sHpnRetMsg.hop_latency = qinfo_hop_latency_min;
 							sHpnRetMsg.queue_occupancy = qinfo_min_value;
 							sHpnRetMsg.switch_id = qinfo_hop_switch_id_min;
@@ -646,6 +671,7 @@ perf_event_loop: {
 							sHpnRetMsg2.queue_occupancy = qinfo_max_value;
 							sHpnRetMsg2.switch_id = qinfo_hop_switch_id_max;
 							hpnretcdone = 1;
+
 							Pthread_cond_signal(&hpn_ret_cond);
 							Pthread_mutex_unlock(&hpn_ret_mutex);
 #if 0
@@ -684,7 +710,8 @@ perf_event_loop: {
 						else
 							{
 								Pthread_mutex_lock(&hpn_ret_mutex);
-								sHpnRetMsg.pts = qinfo_ms_ctime_buf_max;
+								//sHpnRetMsg.pts = qinfo_ms_ctime_buf_max;
+								memcpy(sHpnRetMsg.timestamp,qinfo_ms_ctime_buf_max,MS_CTIME_BUF_LEN);
 								sHpnRetMsg.hop_latency = qinfo_hop_latency_max;
 								sHpnRetMsg.queue_occupancy = qinfo_max_value;
 								sHpnRetMsg.switch_id = qinfo_hop_switch_id_max;
@@ -738,7 +765,8 @@ perf_event_loop: {
 							if (qinfo_min_value != QINFO_START_MIN_VALUE)
 							{
 								Pthread_mutex_lock(&hpn_ret_mutex);
-								sHpnRetMsg.pts = qinfo_ms_ctime_buf_min;
+								//sHpnRetMsg.pts = qinfo_ms_ctime_buf_min;
+								memcpy(sHpnRetMsg.timestamp,qinfo_ms_ctime_buf_min,MS_CTIME_BUF_LEN);
 								sHpnRetMsg.hop_latency = qinfo_hop_latency_min;
 								sHpnRetMsg.queue_occupancy = qinfo_min_value;
 								sHpnRetMsg.switch_id = qinfo_hop_switch_id_min;
@@ -766,7 +794,8 @@ perf_event_loop: {
 							else
 								{ //must be this
 									Pthread_mutex_lock(&hpn_ret_mutex);
-									sHpnRetMsg.pts = qinfo_ms_ctime_buf_max;
+									//sHpnRetMsg.pts = qinfo_ms_ctime_buf_max;
+									memcpy(sHpnRetMsg.timestamp,qinfo_ms_ctime_buf_max,MS_CTIME_BUF_LEN);
 									sHpnRetMsg.hop_latency = qinfo_hop_latency_max;
 									sHpnRetMsg.queue_occupancy = qinfo_max_value;
 									sHpnRetMsg.switch_id = qinfo_hop_switch_id_max;
@@ -2057,11 +2086,11 @@ void fDoHpnRead(unsigned int val, int sockfd)
 	
 	strcpy(sRetMsg.msg, "Hello there!!! Got your Read message..., Here's some data\n");
 	sRetMsg.msg_no = htonl(HPNSSH_MSG);
-	sRetMsg.value = htonl(133);;
+	sRetMsg.value = htonl(133);
 
 	strcpy(sRetMsg2.msg, "Hello there!!! Got your Read message..., Here's some data\n");
 	sRetMsg2.msg_no = htonl(HPNSSH_MSG);
-	sRetMsg2.value = htonl(133);;
+	sRetMsg2.value = htonl(133);
 
 read_again:
 	Pthread_mutex_lock(&hpn_ret_mutex);
@@ -2074,12 +2103,13 @@ read_again:
 		if ( (n = pthread_cond_timedwait(&hpn_ret_cond, &hpn_ret_mutex, &ts)) != 0)
 		{
 			saveerrno = errno;
-			if (vDebugLevel > 6)
+			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+			if (vDebugLevel > 8)
 				fprintf(tunLogPtr,"%s %s: ***INFO***: In fDoHpnRead(),  errno = %d, n= %d**\n", ms_ctime_buf, phase2str(current_phase), saveerrno,n);
 
 			if (n == ETIME || n == ETIMEDOUT) //apparently n could also be ETIME although man notes only mention ETIMEDOUT
 			{
-				if (vDebugLevel > 5)
+				if (vDebugLevel > 7)
 				{
 					fprintf(tunLogPtr,"%s %s: ***WARNING***: In fDoHpnRead(), wait condition timed out errno = %d, n= %d**\n", ms_ctime_buf, phase2str(current_phase), saveerrno,n);
 					fflush(tunLogPtr);
@@ -2089,13 +2119,21 @@ read_again:
 				//goto read_again;
 				y = recv(sockfd, &mychar, 1, MSG_DONTWAIT|MSG_PEEK);
 				saveerrno = errno;
-				fprintf(tunLogPtr,"%s %s: ***WARNING***: In fDoHpnRead(), wait timed out errno = %d, y= %d**\n", ms_ctime_buf, phase2str(current_phase), saveerrno,y);
-				fflush(tunLogPtr);
+				if (vDebugLevel > 6)
+				{
+					fprintf(tunLogPtr,"%s %s: ***INFO***: In fDoHpnRead(), after recv(), errno = %d, y= %d**\n", ms_ctime_buf, phase2str(current_phase), saveerrno,y);
+					fflush(tunLogPtr);
+				}
+
 				if (saveerrno && !y) //cpnnection dropped on client side
 				{
-					fprintf(tunLogPtr,"%s %s: ***WARNING***: client closed connection, returning from read ffDoHpnRead()****\n", ms_ctime_buf, phase2str(current_phase));
-				fflush(tunLogPtr);
-				return;
+					if (vDebugLevel > 1)
+					{
+						fprintf(tunLogPtr,"%s %s: ***INFO***: client closed connection, returning from read fDoHpnRead()****\n", ms_ctime_buf, phase2str(current_phase));
+						fflush(tunLogPtr);
+					}
+
+					return;
 				}
 				else
 					goto read_again;
@@ -2106,10 +2144,12 @@ read_again:
                 }	
 		//Pthread_cond_wait(&hpn_ret_cond, &hpn_ret_mutex);
 	
-	memcpy(sRetMsg.timestamp, sHpnRetMsg.pts, MS_CTIME_BUF_LEN);
+	//memcpy(sRetMsg.timestamp, sHpnRetMsg.pts, MS_CTIME_BUF_LEN);
+	memcpy(sRetMsg.timestamp, sHpnRetMsg.timestamp, MS_CTIME_BUF_LEN);
 	sRetMsg.hop_latency = htonl(sHpnRetMsg.hop_latency);
 	sRetMsg.queue_occupancy = htonl(sHpnRetMsg.queue_occupancy);
 	sRetMsg.switch_id = htonl(sHpnRetMsg.switch_id);
+	sHpnRetMsg.pts = 0;
 
 	if(sHpnRetMsg2.pts)
 	{
@@ -2158,17 +2198,23 @@ void fDoHpnReadAll(unsigned int val, int sockfd)
 	int two = 0;
 	
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-	if (vDebugLevel > 6)
+	if (vDebugLevel > 0)
 		fprintf(tunLogPtr,"%s %s: ***INFO***: In fDoHpnReadAll(), value is %u***\n", ms_ctime_buf, phase2str(current_phase), val);
 	
 	strcpy(sRetMsg.msg, "Hello there!!! Got your ReadAll message..., Here's some data\n");
-	sRetMsg.msg_no = htonl(HPNSSH_MSG);
-	sRetMsg.value = htonl(144);;
-
 	strcpy(sRetMsg2.msg, "Hello there!!! Got your ReadAll message..., Here's some data\n");
+#ifdef HPNSSH_QFACTOR_BINN 
+	//BINN objects are cross platform - no need for big endian, littl endian worries - so sayeth the binn repo
+	sRetMsg.msg_no = HPNSSH_MSG;
+	sRetMsg.value = HPNSSH_READALL_FS;
+	sRetMsg2.msg_no = HPNSSH_MSG;
+	sRetMsg2.value = HPNSSH_READALL_FS;
+#else
+	sRetMsg.msg_no = htonl(HPNSSH_MSG);
+	sRetMsg.value = htonl(HPNSSH_READALL_FS);
 	sRetMsg2.msg_no = htonl(HPNSSH_MSG);
-	sRetMsg2.value = htonl(144);;
-
+	sRetMsg2.value = htonl(HPNSSH_READALL_FS);
+#endif
 read_again:
 	Pthread_mutex_lock(&hpn_ret_mutex);
 	if (gettimeofday(&tv, NULL) < 0)
@@ -2180,13 +2226,14 @@ read_again:
 		if ( (n = pthread_cond_timedwait(&hpn_ret_cond, &hpn_ret_mutex, &ts)) != 0)
 		{
 			saveerrno = errno;
-			if (vDebugLevel > 6)
+			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+			if (vDebugLevel > 8)
 				fprintf(tunLogPtr,"%s %s: ***INFO***: In fDoHpnReadAll(),  errno = %d, n= %d**\n", 
 									ms_ctime_buf, phase2str(current_phase), saveerrno,n);
 
 			if (n == ETIME || n == ETIMEDOUT) //apparently n could also be ETIME although man notes only mention ETIMEDOUT
 			{
-				if (vDebugLevel > 5)
+				if (vDebugLevel > 7)
 				{
 					fprintf(tunLogPtr,"%s %s: ***WARNING***: In fDoHpnReadAll(), wait condition timed out errno = %d, n= %d**\n", 
 													ms_ctime_buf, phase2str(current_phase), saveerrno,n);
@@ -2197,15 +2244,23 @@ read_again:
 				//goto read_again;
 				y = recv(sockfd, &mychar, 1, MSG_DONTWAIT|MSG_PEEK);
 				saveerrno = errno;
-				fprintf(tunLogPtr,"%s %s: ***WARNING***: In fDoHpnReadAll(), wait timed out errno = %d, y= %d**\n", 
-											ms_ctime_buf, phase2str(current_phase), saveerrno,y);
-				fflush(tunLogPtr);
+				if (vDebugLevel > 6)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: In fDoHpnReadAll(), after recv(), errno = %d, y= %d**\n", 
+												ms_ctime_buf, phase2str(current_phase), saveerrno,y);
+					fflush(tunLogPtr);
+				}
+
 				if (saveerrno && !y) //cpnnection dropped on client side
 				{
-					fprintf(tunLogPtr,"%s %s: ***WARNING***: client closed connection, returning from read fDoHpnReadAll()****\n", 
-													ms_ctime_buf, phase2str(current_phase));
-				fflush(tunLogPtr);
-				return;
+					if (vDebugLevel > 1)
+					{
+						fprintf(tunLogPtr,"%s %s: ***INFO***: client closed connection, returning from read fDoHpnReadAll()****\n", 
+															ms_ctime_buf, phase2str(current_phase));
+						fflush(tunLogPtr);
+					}
+				
+					return;
 				}
 				else
 					goto read_again;
@@ -2214,19 +2269,37 @@ read_again:
 				//return;
 			}
                 }	
-	
-	memcpy(sRetMsg.timestamp, sHpnRetMsg.pts, MS_CTIME_BUF_LEN);
+
+//check here	
+	//memcpy(sRetMsg.timestamp, sHpnRetMsg.pts, MS_CTIME_BUF_LEN);
+	memcpy(sRetMsg.timestamp, sHpnRetMsg.timestamp, MS_CTIME_BUF_LEN);
+#ifdef HPNSSH_QFACTOR_BINN 
+	sRetMsg.hop_latency = sHpnRetMsg.hop_latency;
+	sRetMsg.queue_occupancy = sHpnRetMsg.queue_occupancy;
+	sRetMsg.switch_id = sHpnRetMsg.switch_id;
+	sRetMsg.seq_no = ++sMsgSeqNo;
+#else
 	sRetMsg.hop_latency = htonl(sHpnRetMsg.hop_latency);
 	sRetMsg.queue_occupancy = htonl(sHpnRetMsg.queue_occupancy);
 	sRetMsg.switch_id = htonl(sHpnRetMsg.switch_id);
-	
+	sRetMsg.seq_no = htonl(++sMsgSeqNo);
+#endif
+	sHpnRetMsg.pts = 0;	
+
 	if(sHpnRetMsg2.pts)
 	{
 		memcpy(sRetMsg2.timestamp, sHpnRetMsg2.pts, MS_CTIME_BUF_LEN);
+#ifdef HPNSSH_QFACTOR_BINN 
+       		sRetMsg2.hop_latency = sHpnRetMsg2.hop_latency;
+        	sRetMsg2.queue_occupancy = sHpnRetMsg2.queue_occupancy;
+        	sRetMsg2.switch_id = sHpnRetMsg2.switch_id;
+		sRetMsg2.seq_no = ++sMsgSeqNo;	
+#else
        		sRetMsg2.hop_latency = htonl(sHpnRetMsg2.hop_latency);
         	sRetMsg2.queue_occupancy = htonl(sHpnRetMsg2.queue_occupancy);
         	sRetMsg2.switch_id = htonl(sHpnRetMsg2.switch_id);
-
+		sRetMsg2.seq_no = htonl(++sMsgSeqNo);	
+#endif
 		sHpnRetMsg2.pts = 0;
 		two = 1;
 	}
@@ -2246,8 +2319,13 @@ read_again:
 				goto read_again;
 		}
 	
-	fprintf(tunLogPtr,"%s %s: ***WARNING***: client closed connection, EPIPE error???****\n", ms_ctime_buf, phase2str(current_phase));
-	fflush(tunLogPtr);
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	if (vDebugLevel > 0)
+	{
+		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***WARNING***: client closed connection, EPIPE error???****\n", ms_ctime_buf, phase2str(current_phase));
+		fflush(tunLogPtr);
+	}
 #endif
 //	y = str_cli(sockfd, &sRetMsg);
 return;
@@ -2406,7 +2484,7 @@ void * fDoRunGetThresholds(void * vargp)
 	char best_wmem_val[MAX_SIZE_SYSTEM_SETTING_STRING];
 	FILE *pipe;
 	unsigned long last_tx_bytes = 0, last_rx_bytes = 0;	
-	int check_bitrate_interval = 0, keep_bitrate_interval = 0;
+	int check_bitrate_interval = 0;
 	unsigned long rx_before, rx_now, rx_bytes_tot;
 	unsigned long tx_before, tx_now, tx_bytes_tot;
 	double average_tx_kbits_per_sec = 0.0;
@@ -2587,7 +2665,6 @@ start:
 	
 	average_tx_kbits_per_sec += tx_kbits_per_sec;	
 	average_rx_kbits_per_sec += rx_kbits_per_sec;
-	keep_bitrate_interval = check_bitrate_interval;
 	if (check_bitrate_interval >= BITRATE_INTERVAL) 
 	{
 		//average_tx_bits_per_sec = average_tx_bits_per_sec/check_bitrate_interval;
@@ -2667,7 +2744,8 @@ start:
 	{
 		if (!check_bitrate_interval)
 		{
-			fprintf(tunLogPtr,"%s %s: average_tx_Gbits_per_sec = %.2f Gb/s, average_rx_Gbits_per_sec = %.2f Gb/s, BITRATE_INTERVAL = %d \n",ms_ctime_buf, phase2str(current_phase), average_tx_Gbits_per_sec, average_rx_Gbits_per_sec, keep_bitrate_interval);
+			fprintf(tunLogPtr,"%s %s: average_tx_Gbits_per_sec = %.2f Gb/s, average_rx_Gbits_per_sec = %.2f Gb/s\n",
+							ms_ctime_buf, phase2str(current_phase), average_tx_Gbits_per_sec, average_rx_Gbits_per_sec);
 		}
 	}
 
@@ -2806,7 +2884,7 @@ start:
 				else
 					if (nothing_done) //no change to tuning
 					{
-						if (vDebugLevel > 2)
+						if (vDebugLevel > 4)
 						{
 							fprintf(tunLogPtr, "%s %s: ***What is nothing_done??? and nothing_done is %d ...***\n", ms_ctime_buf, phase2str(current_phase), nothing_done);
 						}
@@ -3865,7 +3943,12 @@ Readn(int fd, void *ptr, size_t nbytes)
 void * doProcessHpnClientReq(void * arg)
 {
 	ssize_t	n;
+#ifdef HPNSSH_QFACTOR_BINN
+        struct ClientBinnMsg sMsg;
+	char from_cli[BUFFER_SIZE_FROM_CLIENT];
+#else
 	struct PeerMsg	from_cli;
+#endif
 	time_t clk;
 	char ctime_buf[27];
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
@@ -3876,20 +3959,61 @@ void * doProcessHpnClientReq(void * arg)
 
 	for ( ; ; ) 
 	{
+		//struct binn_struct from_cli;
+
+#ifdef HPNSSH_QFACTOR_BINN
+		if ( (n = Readn(sockfd, from_cli, sizeof(from_cli))) == 0)
+#else
 		if ( (n = Readn(sockfd, &from_cli, sizeof(from_cli))) == 0)
+#endif
 		{
-			fprintf(tunLogPtr,"\n%s %s: ***Hpn Client Connection closed***\n", ms_ctime_buf, phase2str(current_phase));
-			fflush(tunLogPtr);
+			if (vDebugLevel > 0)
+			{
+				fprintf(tunLogPtr,"\n%s %s: ***Hpn Client Connection closed***\n", ms_ctime_buf, phase2str(current_phase));
+				fflush(tunLogPtr);
+			}
 
 			Close(sockfd);
 			return (NULL);         /* connection closed by other end */
 		}
-
+			
+#ifdef HPNSSH_QFACTOR_BINN
+#if 0
+		if (vDebugLevel > 1)
+		{
+			fprintf(tunLogPtr,"\n%s %s: ***num bytes read from Hpn Client = %lu***\n", ms_ctime_buf, phase2str(current_phase),n);
+			fflush(tunLogPtr);
+		}
+#endif
+		fRead_Binn_Client_Object(&sMsg, (binn *)&from_cli);
+#endif
 		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-#ifdef HPNSSH_QFACTOR
+#ifdef HPNSSH_QFACTOR_BINN
+		//if (ntohl(sMsg.msg_type) == HPNSSH_MSG)
+		if (sMsg.msg_type == HPNSSH_MSG)
+		{
+			if (vDebugLevel > 0)
+			{
+				fprintf(tunLogPtr,"\n%s %s: ***Received Hpnssh message from Hpnssh Client...***\n", ms_ctime_buf, phase2str(current_phase));
+				fprintf(tunLogPtr,"%s %s: ***msg type = %d, msg op = %u\n", ms_ctime_buf, phase2str(current_phase), sMsg.msg_type, sMsg.op);
+			}
+				
+			fDoHpnAssessment(sMsg.op, sockfd);
+		}
+			else
+				if (vDebugLevel > 0)
+				{
+					fprintf(tunLogPtr,"\n%s %s: ***Received unknown message from some Hpn client???...***\n", ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***msg_type = %d", ms_ctime_buf, phase2str(current_phase), sMsg.msg_type);
+				}
+
+		fflush(tunLogPtr);
+	}
+}
+#else
 		if (ntohl(from_cli.msg_no) == HPNSSH_MSG)
 		{
-			if (vDebugLevel > 6)
+			if (vDebugLevel > 1)
 			{
 				fprintf(tunLogPtr,"\n%s %s: ***Received Hpnssh message %u from Hpnssh Client...***\n", 
 									ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.seq_no));
@@ -3899,7 +4023,6 @@ void * doProcessHpnClientReq(void * arg)
 				
 			fDoHpnAssessment(ntohl(from_cli.value), sockfd);
 		}
-#endif
 			else
 				if (vDebugLevel > 0)
 				{
@@ -3910,6 +4033,7 @@ void * doProcessHpnClientReq(void * arg)
 		fflush(tunLogPtr);
 	}
 }
+#endif
 #endif
 
 void
@@ -4188,7 +4312,26 @@ void read_sock(int sockfd)
 
 int str_cli(int sockfd, struct PeerMsg *sThisMsg) //str_cli09
 {
-	int y = Writen(sockfd, sThisMsg, sizeof(struct PeerMsg));
+	int y;
+#ifdef HPNSSH_QFACTOR_BINN
+        binn *myobj = binn_object();
+        fMake_Binn_Server_Object(sThisMsg, myobj);
+#if 0
+	fprintf(tunLogPtr,"***!!!!!!!Size of binn object = %u...***\n", binn_size(myobj));
+	fflush(tunLogPtr);
+#endif
+        y = Writen(sockfd, binn_ptr(myobj), binn_size(myobj));
+	binn_free(myobj);
+#else
+	y = Writen(sockfd, sThisMsg, sizeof(struct PeerMsg));
+#endif
+	return y;
+}
+
+int str_cli_nohpn(int sockfd, struct PeerMsg *sThisMsg) //str_cli09
+{
+	int y;
+	y = Writen(sockfd, sThisMsg, sizeof(struct PeerMsg));
 	return y;
 }
 
@@ -4242,7 +4385,7 @@ cli_again:
 	{
 		goto cli_again;
 	}
-	str_cli(sockfd, &sMsg2);         /* do it all */
+	str_cli_nohpn(sockfd, &sMsg2);         /* do it all */
 	check = shutdown(sockfd, SHUT_WR);
 //	close(sockfd); - use shutdown instead of close
 	if (!check)
@@ -4444,7 +4587,7 @@ int main(int argc, char **argv)
 	memset(&sHpnRetMsg,0,sizeof(sHpnRetMsg));
 	strcpy(sHpnRetMsg.msg, "Hello there!!! This is a Hpn msg...\n");
 	sHpnRetMsg.msg_no = htonl(HPNSSH_MSG);
-
+	
 	memset(&sHpnRetMsg2,0,sizeof(sHpnRetMsg));
 	strcpy(sHpnRetMsg2.msg, "Hello there!!! This is a Hpn msg...\n");
 	sHpnRetMsg2.msg_no = htonl(HPNSSH_MSG);
