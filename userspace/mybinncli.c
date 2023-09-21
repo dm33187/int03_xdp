@@ -442,7 +442,7 @@ int main(int argc, char *argv[])
 
 cli_again:
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-	cliHpnBinnMsg.msg_type = HPNSSH_MSG; //BTW - binn repo mentions that code is cross-platform so no need to worrk aout endianess
+	cliHpnBinnMsg.msg_type = HPNSSH_MSG; //BTW - binn repo mentions that code is cross-platform so no need to worry about endianess
 
 	switch (cliHpnBinnMsg.op) {
 		case  HPNSSH_START: //connect
