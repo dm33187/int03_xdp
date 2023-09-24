@@ -9,10 +9,12 @@
 #define HPNSSH_MSG      2
 
 //For HPNSSH_MSGs operations
-#define HPNSSH_READALL  44
-#define HPNSSH_SHUTDOWN 55
-#define HPNSSH_START    99
-#define HPNSSH_READALL_FS  144  //from server
+#define HPNSSH_READ		 33
+#define HPNSSH_READALL		 44
+#define HPNSSH_SHUTDOWN		 55
+#define HPNSSH_START		 99
+#define HPNSSH_READ_FS		133
+#define HPNSSH_READALL_FS  	144  //from server
 
 struct ServerBinnMsg {
 	unsigned int msg_type;
