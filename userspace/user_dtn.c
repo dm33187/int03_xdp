@@ -1096,7 +1096,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			new_traffic = 0;
 			src_ip_addr.y = ntohl(hop_key.flow_key.src_ip);
 		//	src_ip_addr.y = hop_key.flow_key.src_ip;
-			if (vDebugLevel > 1)
+			if (vDebugLevel > 4)
 			{
 				gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 				fprintf(tunLogPtr, "%s %s: ***new traffic???***\n", ms_ctime_buf, phase2str(current_phase));
@@ -2084,13 +2084,18 @@ void fDoHpnRead(unsigned int val, int sockfd)
 	if (vDebugLevel > 6)
 		fprintf(tunLogPtr,"%s %s: ***INFO***: In fDoHpnRead(), value is %u***\n", ms_ctime_buf, phase2str(current_phase), val);
 	
-	strcpy(sRetMsg.msg, "Hello there!!! Got your Read message..., Here's some data\n");
+#ifdef HPNSSH_QFACTOR_BINN 
+	//BINN objects are cross platform - no need for big endian, littl endian worries - so sayeth the binn repo
+	sRetMsg.msg_no = HPNSSH_MSG;
+	sRetMsg.value = HPNSSH_READ_FS;
+	sRetMsg2.msg_no = HPNSSH_MSG;
+	sRetMsg2.value = HPNSSH_READ_FS;
+#else
 	sRetMsg.msg_no = htonl(HPNSSH_MSG);
-	sRetMsg.value = htonl(133);
-
-	strcpy(sRetMsg2.msg, "Hello there!!! Got your Read message..., Here's some data\n");
+	sRetMsg.value = htonl(HPNSSH_READ_FS);
 	sRetMsg2.msg_no = htonl(HPNSSH_MSG);
-	sRetMsg2.value = htonl(133);
+	sRetMsg2.value = htonl(HPNSSH_READ_FS);
+#endif
 
 read_again:
 	Pthread_mutex_lock(&hpn_ret_mutex);
@@ -2146,18 +2151,29 @@ read_again:
 	
 	//memcpy(sRetMsg.timestamp, sHpnRetMsg.pts, MS_CTIME_BUF_LEN);
 	memcpy(sRetMsg.timestamp, sHpnRetMsg.timestamp, MS_CTIME_BUF_LEN);
+#ifdef HPNSSH_QFACTOR_BINN 
+	sRetMsg.hop_latency = sHpnRetMsg.hop_latency;
+	sRetMsg.queue_occupancy = sHpnRetMsg.queue_occupancy;
+	sRetMsg.switch_id = sHpnRetMsg.switch_id;
+#else
 	sRetMsg.hop_latency = htonl(sHpnRetMsg.hop_latency);
 	sRetMsg.queue_occupancy = htonl(sHpnRetMsg.queue_occupancy);
 	sRetMsg.switch_id = htonl(sHpnRetMsg.switch_id);
+#endif
 	sHpnRetMsg.pts = 0;
 
 	if(sHpnRetMsg2.pts)
 	{
 		memcpy(sRetMsg2.timestamp, sHpnRetMsg2.pts, MS_CTIME_BUF_LEN);
+#ifdef HPNSSH_QFACTOR_BINN 
+       		sRetMsg2.hop_latency = sHpnRetMsg2.hop_latency;
+        	sRetMsg2.queue_occupancy = sHpnRetMsg2.queue_occupancy;
+        	sRetMsg2.switch_id = sHpnRetMsg2.switch_id;
+#else
        		sRetMsg2.hop_latency = htonl(sHpnRetMsg2.hop_latency);
         	sRetMsg2.queue_occupancy = htonl(sHpnRetMsg2.queue_occupancy);
         	sRetMsg2.switch_id = htonl(sHpnRetMsg2.switch_id);
-
+#endif
 		sHpnRetMsg2.pts = 0;
 		two = 1;
 	}
@@ -2174,7 +2190,7 @@ read_again:
 	if (two)
 	{
 		two = 0;
-		y = str_cli(sockfd, &sRetMsg);
+		//y = str_cli(sockfd, &sRetMsg);
 		y = str_cli(sockfd, &sRetMsg2);
 	}
 	else

@@ -62,7 +62,7 @@
 
 #if 1
 #define HPNSSH_QFACTOR  1
-#if 0
+#if 1
 #define HPNSSH_QFACTOR_BINN  1
 #endif
 #endif
@@ -76,6 +76,7 @@
 #define HPNSSH_READALL		44
 #define HPNSSH_SHUTDOWN		55
 #define	HPNSSH_START		99
+#define HPNSSH_READ_FS		133
 #define HPNSSH_READALL_FS	144
 #define	HPNSSH_DUMMY		166
 

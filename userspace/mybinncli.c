@@ -276,8 +276,35 @@ ssize_t Readn(int fd, void *ptr, size_t nbytes)
 	return(n);
 }
 
+void fDoHpnReadFS(unsigned int val, int sockfd, struct ServerBinnMsg *from_server);
 void fDoHpnReadAllFS(unsigned int val, int sockfd, struct ServerBinnMsg *from_server);
 void fDoHpnFromserver(unsigned int val, int sockfd, struct ServerBinnMsg *from_server);
+
+void fDoHpnReadFS(unsigned int val, int sockfd, struct ServerBinnMsg *from_server)
+{
+	time_t clk;
+	char ctime_buf[CTIME_BUF_LEN];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+
+	if (vDebugLevel > 1)
+	{
+		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+		fprintf(pHpnClientLogPtr,"\n%s %s: ***INFO***: In fDoHpnReadFS(), value is %u***", ms_ctime_buf, phase2str(current_phase), val);
+	}
+
+	if (vDebugLevel > 0)
+	{
+		fprintf(pHpnClientLogPtr, "\n%s %s: ***********************HPN_CLIENT************************",
+								from_server->timestamp, phase2str(current_phase));
+		fprintf(pHpnClientLogPtr, "\n%s %s: HPN_CLIENT    : hop_switch_id = %u\n",
+								from_server->timestamp, phase2str(current_phase), from_server->switch_id);
+		fprintf(pHpnClientLogPtr, "%s %s: HPN_CLIENT    : queue_occupancy = %u\n",
+								from_server->timestamp, phase2str(current_phase), from_server->queue_occupancy);
+		fprintf(pHpnClientLogPtr, "%s %s: HPN_CLIENT    : hop_latency = %u\n",
+								from_server->timestamp, phase2str(current_phase), from_server->hop_latency);
+	}
+return;
+}
 
 void fDoHpnReadAllFS(unsigned int val, int sockfd, struct ServerBinnMsg *from_server)
 {
@@ -312,9 +339,14 @@ void fDoHpnFromServer(unsigned int val, int sockfd, struct ServerBinnMsg *from_s
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
 
 	switch (val) {
+		case HPNSSH_READ_FS:
+			fDoHpnReadFS(val, sockfd, from_server);
+			break;
+
 		case HPNSSH_READALL_FS:
 			fDoHpnReadAllFS(val, sockfd, from_server);
 			break;
+
 		default:
 			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 			fprintf(pHpnClientLogPtr,"%s %s: ***WARNING***: Invalid Hpnmessage value from client. Value is %u***\n", ms_ctime_buf, phase2str(current_phase), val);
@@ -324,7 +356,7 @@ void fDoHpnFromServer(unsigned int val, int sockfd, struct ServerBinnMsg *from_s
 	return;
 }
 
-void process_request(int sockfd)
+void process_request(int sockfd, int readonce)
 {
 	ssize_t n;
 	struct ServerBinnMsg sMsg;
@@ -371,6 +403,9 @@ void process_request(int sockfd)
 			}
 		
 		fflush(pHpnClientLogPtr);
+
+		if (readonce)
+			return;
 	}
 }
 
@@ -464,7 +499,7 @@ cli_again:
 				goto cli_again;
 			}
 
-			cliHpnBinnMsg.op = HPNSSH_READALL; //next state
+			cliHpnBinnMsg.op = HPNSSH_READ; //next state
 			current_phase = RUNNING;
 			goto cli_again;
 
@@ -477,6 +512,34 @@ cli_again:
 			Close(sockfd);
 			exit(0);
 			break;
+
+		 case HPNSSH_READ:
+                        if (vDebugLevel > 1)
+                        {
+                                fprintf(pHpnClientLogPtr,"%s %s: ***Sending READ message to HPNSSN_QFACTOR server...***\n",
+                                                                                        	ms_ctime_buf, phase2str(current_phase));
+                                fflush(pHpnClientLogPtr);
+                        }
+
+			str_cli(sockfd, &cliHpnBinnMsg);        
+			
+			if (vDebugLevel > 1)
+			{
+				fprintf(pHpnClientLogPtr,"%s %s: ***Finished sending READ message to HPNSSN_QFACTOR server...***\n", ms_ctime_buf, phase2str(current_phase));
+				fflush(pHpnClientLogPtr);
+			}
+
+                        process_request(sockfd,1);
+
+                        if (vShutdown)
+                        {
+				cliHpnBinnMsg.op = HPNSSH_SHUTDOWN;
+                                vShutdown = 0;
+                        }
+                        else
+				cliHpnBinnMsg.op = HPNSSH_READ;
+
+                        break;
 	
 		case HPNSSH_READALL:		
 			if (vDebugLevel > 1)
@@ -485,7 +548,6 @@ cli_again:
 				fflush(pHpnClientLogPtr);
 			}
 
-			cliHpnBinnMsg.op = cliHpnBinnMsg.op;
 			str_cli(sockfd, &cliHpnBinnMsg);        
 				
 			if (vDebugLevel > 1)
@@ -494,7 +556,7 @@ cli_again:
 				fflush(pHpnClientLogPtr);
 			}
 
-			process_request(sockfd);
+			process_request(sockfd,0);
 				
 			if (vShutdown)
 			{
