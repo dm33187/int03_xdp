@@ -499,7 +499,7 @@ cli_again:
 				goto cli_again;
 			}
 
-			cliHpnBinnMsg.op = HPNSSH_READ; //next state
+			cliHpnBinnMsg.op = HPNSSH_READALL; //next state
 			current_phase = RUNNING;
 			goto cli_again;
 
