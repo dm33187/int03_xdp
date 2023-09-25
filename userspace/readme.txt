@@ -81,6 +81,10 @@ The name of the NIC that the Tuning Module will be working with. Eg. enp6s0.
 k. nic_attach_type
 The bpf program will attach to  network interface using this type
 
+l. source_hpnssh_qfactor_port
+The port that a hpnssh client will attach to retrieve metadata information 
+about the traffic flow.
+
 gdv.sh 
 ======
 The gdv.sh file is a simple shell script file that get default values using the 
@@ -178,30 +182,3 @@ create JSON formatted data.
 ==============================================
 ==============================================
 ==============================================
-Additional specs that may be worth checking out. 
-
-/***
- ***Maximum number of microseconds in one NAPI polling cycle. 
- ***Polling will exit when either netdev_budget_usecs have elapsed during 
- ***the poll cycle or the number of packets processed reaches netdev_budget.
- ***
- ***/
-net.core.netdev_budget = 300 
-net.core.netdev_budget_usecs = 8000 
-
-
-/***
- ***Maximum number of packets, queued on the INPUT side, when the interface 
- ***receives packets faster than kernel can process them.
- ***
- ***/
-net.core.netdev_max_backlog = 1000 
-
-/***
- ***Increase transmission queue of interface. 
- ***Example provided here. Probably can increase more.
- ***
- ***/
-ifconfig ethXXX txqueuelen 10000 
-
-
