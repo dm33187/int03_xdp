@@ -1,4 +1,8 @@
-# Relates to the ongoing XDP/eBPF project at FIU
+# Q-Factor: A Framework to Enable Ultra High-Speed Data Transfer Optimization based on Real-Time Network State
+- 	Q-Factor is a response to the high-cost of manual and time-consuming tuning of data transfer parameters 
+	applied to data-transfer optimization processes.
+
+
 This repo is comprised of basically two parts:
 
 -	**part 1** deals with creating an assessment package that a DTN operator
@@ -91,3 +95,20 @@ In order to compile and work with the Tuning Module, do the following:
 -	follow the instructions to install the package 
 
 **Note: Please see <install_directory>/readme.txt for information on how to start the Tuning Module**
+
+**Some notes on mechanism of the Tuning Module**
+-	Uses a HTTP client and server to dynamically change settings on the fly, for example:
+	* The Debug level
+	* Retransmission rate
+	* Queue Occupancy Threshold
+	* Has a Learning mode and a Tuning mode
+-	When set to Tuning mode, will dynmically set the the suggested tuning changes without manual intervention
+	* Learning mode will only make suggestions which can be found in the log
+	* Any changes to the system are automaticallly logged.
+-	Uses "ethtool" to manipulate buffer rings of a network device in order to get petter performance
+-	If Queue Occupancy on one node gets above some threshold and the retransmission rate on the other node gets too high
+	the Tuning Module will lower the pacing (if in Tuning mode) or suggest some value to lower it too. It will then put 
+	back the pacing to its original state after the transfer is over.
+-	Monitors RTT use bpf trace tools and also with the use of "ping".
+-	Added the ability for clients (hpnssh, etc.) to connect to the Tuning Module in order to receive data
+	for monitoring purposes.
