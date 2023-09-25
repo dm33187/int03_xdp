@@ -20,8 +20,6 @@ USER_C := ${USER_TARGETS:=.c}
 USER_OBJ := ${USER_C:.c=.o}
 MY_C := ${MY_TARGETS:=.c}
 MY_OBJ := ${MY_C:.c=.o}
-MYBINN_C := ${MYBINN_TARGETS:=.c}
-MYBINN_OBJ := ${MYBINN_C:.c=.o}
 
 # Expect this is defined by including Makefile, but define if not
 COMMON_DIR ?= ../common/
@@ -57,7 +55,7 @@ BPF_CFLAGS ?= -I$(LIBBPF_DIR)/build/usr/include/ -I../headers/
 
 LIBS = -l:libbpf.a -lelf -lz -lrt $(USER_LIBS)
 
-all: llvm-check $(USER_TARGETS) $(XDP_OBJ) $(COPY_LOADER) $(COPY_STATS) $(MY_TARGETS) $(MYBINN_TARGETS)
+all: llvm-check $(USER_TARGETS) $(XDP_OBJ) $(COPY_LOADER) $(COPY_STATS) $(MY_TARGETS) 
 
 #.PHONY: clean $(CLANG) $(LLC)
 .PHONY: clean $(CLANG) 
@@ -66,7 +64,7 @@ clean:
 	rm -rf $(LIBBPF_DIR)/build
 	$(MAKE) -C $(LIBBPF_DIR) clean
 	$(MAKE) -C $(COMMON_DIR) clean
-	rm -f $(USER_TARGETS) $(XDP_OBJ) $(USER_OBJ) $(COPY_LOADER) $(COPY_STATS) $(OTHER_OBJS) $(FACILIO_OBJS) $(MY_TARGETS) $(MYBINN_TARGETS)
+	rm -f $(USER_TARGETS) $(XDP_OBJ) $(USER_OBJ) $(COPY_LOADER) $(COPY_STATS) $(OTHER_OBJS) $(FACILIO_OBJS) $(MY_TARGETS) 
 	rm -f *.ll
 	rm -f *~
 
@@ -117,13 +115,10 @@ $(COMMON_OBJS): %.o: %.h
 
 $(USER_TARGETS): %: %.c  $(OBJECT_LIBBPF) Makefile $(COMMON_MK) $(COMMON_OBJS) $(OTHER_OBJS) $(FACILIO_OBJS) $(KERN_USER_H) $(EXTRA_DEPS)
 	$(CC) -Wall -Wno-unused-label $(CFLAGS) $(LDFLAGS) -o $@ $(COMMON_OBJS) $(OTHER_OBJS) $(FACILIO_OBJS) -lm -lpthread \
-	 $< $(LIBS) ../../binn/libbinn.a
+	 $< $(LIBS) 
 
 $(MY_TARGETS): %: %.c  Makefile $(COMMON_MK) $(MY_OBJS) $(EXTRA_DEPS) 
 	$(CC) -Wall -Wno-unused-label -g -o $@ $(MY_OBJS) $< 
-
-$(MYBINN_TARGETS): %: %.c  Makefile $(COMMON_MK) $(EXTRA_DEPS)
-	$(CC) -Wall -Wno-unused-label -g -o $@ $< ../../binn/libbinn.a
 
 $(XDP_OBJ): %.o: %.c  Makefile $(COMMON_MK) $(KERN_USER_H) $(EXTRA_DEPS) $(OBJECT_LIBBPF)
 	$(CLANG) -S \

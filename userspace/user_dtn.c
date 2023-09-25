@@ -416,8 +416,8 @@ typedef struct {
 	char ** argv;
 } sArgv_t;
 
-#include "../../int-sink/src/shared/int_defs.h"
-#include "../../int-sink/src/shared/filter_defs.h"
+#include "int_defs.h"
+#include "filter_defs.h"
 
 #ifdef INCLUDE_SRC_PORT
 static __u16 src_port;
