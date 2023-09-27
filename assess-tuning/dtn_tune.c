@@ -505,45 +505,45 @@ char aApplyBiosDefTun2DArray[NUM_SYSTEM_SETTINGS][MAX_SIZE_SYSTEM_SETTING_STRING
 #define TUNING_NUMS_10GandUnder	9
 /* Must change TUNING_NUMS_10GandUnder if adding more to the array below */
 host_tuning_vals_t aTuningNumsToUse10GandUnder[TUNING_NUMS_10GandUnder] = {
-	{"net.core.rmem_max",				67108864,          -1,      	0},
-	{"net.core.wmem_max",				67108864,          -1,      	0},
-	{"net.ipv4.tcp_mtu_probing",			       1,          -1,      	0},
-	{"net.ipv4.tcp_available_congestion_control",	getvalue,   	   -1,		0},
-	{"net.ipv4.tcp_congestion_control",	    	    htcp,	   -1,		0}, //uses #defines to help
-	{"net.core.default_qdisc",			      fq, 	   -1,		0}, //uses #defines
-	{"net.ipv4.tcp_rmem",				    4096,      	87380,   33554432},
-	{"net.ipv4.tcp_wmem",				    4096,       65536,   33554432},
-	{"MTU",						       0, 	   84, 		0} //Will leave here but not using for now
+	{"net.core.rmem_max",				1147483647,          -1,	    0},
+	{"net.core.wmem_max",				1147483647,          -1,      	    0},
+	{"net.ipv4.tcp_mtu_probing",			         1,          -1,      	    0},
+	{"net.ipv4.tcp_available_congestion_control",	  getvalue,   	     -1,	    0},
+	{"net.ipv4.tcp_congestion_control",	    	      htcp,	     -1,	    0}, //uses #defines to help
+	{"net.core.default_qdisc",			        fq, 	     -1,	    0}, //uses #defines
+	{"net.ipv4.tcp_rmem",				      4096,       87380,   1147483647},
+	{"net.ipv4.tcp_wmem",				      4096,       65536,   1147483647},
+	{"MTU",						         0, 	     84, 	    0} //Will leave here but not using for now
 };
 
 #define TUNING_NUMS_Over10GtoUnder100G	9
 /* Must change TUNING_NUMS_Over10GtoUnder100G if adding more to the array below */
 host_tuning_vals_t aTuningNumsToUse_Over10GtoUnder100G[TUNING_NUMS_Over10GtoUnder100G] = {
-	{"net.core.rmem_max",				134217728,         -1,      	0},
-	{"net.core.wmem_max",				134217728,         -1,      	0},
-	{"net.ipv4.tcp_mtu_probing",			       1,          -1,      	0},
-	{"net.ipv4.tcp_available_congestion_control",	getvalue,   	   -1,		0},
-	{"net.ipv4.tcp_congestion_control",	    	    htcp,	   -1,		0}, //uses #defines to help
-	{"net.core.default_qdisc",			      fq, 	   -1,		0}, //uses #defines
-	{"net.ipv4.tcp_rmem",				    4096,      	87380,   67108864},
-	{"net.ipv4.tcp_wmem",				    4096,       65536,   67108864},
-	{"MTU",						       0, 	   84, 		0} //Will leave here but not using for now
+	{"net.core.rmem_max",				1147483647,          -1,	    0},
+	{"net.core.wmem_max",				1147483647,          -1,	    0},
+	{"net.ipv4.tcp_mtu_probing",			       1,            -1,	    0},
+	{"net.ipv4.tcp_available_congestion_control",	getvalue,   	     -1,	    0},
+	{"net.ipv4.tcp_congestion_control",	    	    htcp,	     -1,	    0}, //uses #defines to help
+	{"net.core.default_qdisc",			      fq, 	     -1,	    0}, //uses #defines
+	{"net.ipv4.tcp_rmem",				    4096,      	  87380,   1147483647},
+	{"net.ipv4.tcp_wmem",				    4096,         65536,   1147483647},
+	{"MTU",						       0, 	     84,	    0} //Will leave here but not using for now
 };
 
 #define TUNING_NUMS_100G	11
 /* Must change TUNING_NUMS_100G if adding more to the array below */
 host_tuning_vals_t aTuningNumsToUse100Gb[TUNING_NUMS_100G] = {
-	{"net.core.rmem_max",				2147483647,          -1,      		0},
-	{"net.core.wmem_max",				2147483647,          -1,      		0},
-	{"net.ipv4.tcp_mtu_probing",				 1,          -1,      		0},
-	{"net.ipv4.tcp_available_congestion_control",	  getvalue,	     -1,		0},
-	{"net.ipv4.tcp_congestion_control",		      htcp,	     -1,		0}, //uses #defines to help
-	{"net.core.default_qdisc",				fq,	     -1,		0}, //uses #defines
-	{"net.ipv4.tcp_rmem",				      4096,	  87380,       2147483647},
-	{"net.ipv4.tcp_wmem",				      4096,       65536,       2147483647},
-	{"net.core.netdev_max_backlog",			    250000,	     -1,		0},
-	{"net.ipv4.tcp_no_metrics_save",			 1,	     -1,		0},
-	{"MTU",							 0,	     84, 		0} //leave here not use for now
+	{"net.core.rmem_max",				1147483647,          -1,      	    0},
+	{"net.core.wmem_max",				1147483647,          -1,      	    0},
+	{"net.ipv4.tcp_mtu_probing",				 1,          -1,      	    0},
+	{"net.ipv4.tcp_available_congestion_control",	  getvalue,	     -1,	    0},
+	{"net.ipv4.tcp_congestion_control",		      htcp,	     -1,	    0}, //uses #defines to help
+	{"net.core.default_qdisc",				fq,	     -1,	    0}, //uses #defines
+	{"net.ipv4.tcp_rmem",				      4096,	  87380,   1147483647},
+	{"net.ipv4.tcp_wmem",				      4096,       65536,   1147483647},
+	{"net.core.netdev_max_backlog",			    250000,	     -1,	    0},
+	{"net.ipv4.tcp_no_metrics_save",			 1,	     -1,	    0},
+	{"MTU",							 0,	     84, 	    0} //leave here not use for now
 };
 void fDoSystemTuning(void)
 {
@@ -731,7 +731,7 @@ void fDoSystemTuning(void)
 									i++;
 									j++;
 								}
-#define SETTINGS_PAD_MAX2 43
+#define SETTINGS_PAD_MAX2 41
 								vPad = SETTINGS_PAD_MAX2-(strlen(min) + strlen(def) + strlen(max));
 								{
 									int vPadStrLen;
