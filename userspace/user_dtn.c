@@ -970,6 +970,8 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 		
 		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 
+		//total = total + data_offset + sizeof(hop_key);
+		
 		if (Qinfo < qinfo_min_value)
 		{
 			qinfo_clk_min = clk;
@@ -1122,7 +1124,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 		hop_key.hop_index++;
 
 	}
-
+		
 	flow_threshold_update.total_hops = hop_key.hop_index;
 	bpf_map_update_elem(ctx->flow_thresholds, &hop_key.flow_key, &flow_threshold_update, BPF_ANY);
 	struct counter_set empty_counter = {};

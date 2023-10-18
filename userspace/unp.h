@@ -62,7 +62,7 @@
 
 #if 1
 #define HPNSSH_QFACTOR  1
-#if 0
+#if 1
 #define HPNSSH_QFACTOR_BINN  1
 #endif
 #endif
