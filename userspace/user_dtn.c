@@ -173,6 +173,7 @@ void open_csv_file(void)
 }
 
 static int vDidSetChannel = 0;
+static int vCanStartEvaluationTimer = 1;
 static int perf_buffer_poll_start = 0;
 //static time_t total_time_passed = 0;
 static double vRetransmissionRate = 0.0;
@@ -236,13 +237,16 @@ static union uIP src_ip_addr;
 
 void qOCC_Hop_TimerID_Handler(int signum, siginfo_t *info, void *ptr);
 void qOCC_TimerID_Handler(int signum, siginfo_t *info, void *ptr);
+void qEvaluation_TimerID_Handler(int signum, siginfo_t *info, void *ptr);
 static void timerHandler( int sig, siginfo_t *si, void *uc );
 
 timer_t qOCC_Hop_TimerID; //when both Qinfo and Hop latency over threshhold
 timer_t qOCC_TimerID; // when Qinfo over some user defined value that will cause us to send message to peer to start TCP Pacing if appropiate
+timer_t qEvaluation_TimerID; // when Qinfo over some user defined value that will cause us to send message to peer to start TCP Pacing if appropiate
 timer_t rTT_TimerID;
 
 struct itimerspec sStartTimer;
+struct itimerspec sStartEvaluationTimer;
 struct itimerspec sDisableTimer;
 
 static void timerHandler( int sig, siginfo_t *si, void *uc )
@@ -255,14 +259,15 @@ static void timerHandler( int sig, siginfo_t *si, void *uc )
 	else
 		if ( *tidp == qOCC_TimerID )
 			qOCC_TimerID_Handler(sig, si, uc);
-	
 		else
-			fprintf(stdout, "Timer handler incorrect***\n");
-
+			if ( *tidp == qEvaluation_TimerID )
+				qEvaluation_TimerID_Handler(sig, si, uc);
+			else
+				fprintf(stdout, "Timer handler incorrect***\n");
 	return;
 }
 
-static int makeTimer( char *name, timer_t *timerID, int expires_usecs)
+static int makeTimer( char *name, timer_t *timerID, int expires_usecs, struct itimerspec *startTmr)
 {
 	struct sigevent         te;
 	struct sigaction        sa;
@@ -286,9 +291,14 @@ static int makeTimer( char *name, timer_t *timerID, int expires_usecs)
 	te.sigev_value.sival_ptr = timerID;
 	timer_create(CLOCK_REALTIME, &te, timerID);
 
+	/*
 	sStartTimer.it_value.tv_sec = sec;
 	sStartTimer.it_value.tv_nsec = nsec;
 	fprintf(stdout,"sec in timer = %ld, nsec = %ld, expires_usec = %d\n", sStartTimer.it_value.tv_sec, sStartTimer.it_value.tv_nsec, expires_usecs);
+	*/
+	startTmr->it_value.tv_sec = sec;
+	startTmr->it_value.tv_nsec = nsec;
+	fprintf(stdout,"sec in timer = %ld, nsec = %ld, expires_usec = %d\n", startTmr->it_value.tv_sec, startTmr->it_value.tv_nsec, expires_usecs);
 
 	return(0);
 }
@@ -501,6 +511,21 @@ int vq_h_TimerIsSet = 0;
 int vq_TimerIsSet = 0;
 int vq_WarningCount = 0;
 
+void qEvaluation_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
+{
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	
+	vCanStartEvaluationTimer = 1;
+	
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	fprintf(tunLogPtr, "%s %s: ***Evaluation Timer done. Resetting***\n",ms_ctime_buf, phase2str(current_phase)); 
+	fflush(tunLogPtr);
+
+	return;
+}
+
 void qOCC_Hop_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
 {
 	time_t clk;
@@ -559,11 +584,12 @@ void * fDoRunBpfCollectionPerfEventArray2(void * vargp)
 	struct threshold_maps maps = {};
 
 	memset (&sStartTimer,0,sizeof(struct itimerspec));
+	memset (&sStartEvaluationTimer,0,sizeof(struct itimerspec));
 	memset (&sDisableTimer,0,sizeof(struct itimerspec));
 
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 
-	timerRc = makeTimer("qOCC_Hop_TimerID", &qOCC_Hop_TimerID, gInterval);
+	timerRc = makeTimer("qOCC_Hop_TimerID", &qOCC_Hop_TimerID, gInterval, &sStartTimer);
 	if (timerRc)
 	{
 		fprintf(tunLogPtr, "%s %s: Problem creating timer *qOCC_Hop_TimerID*.\n", ms_ctime_buf, phase2str(current_phase));
@@ -572,7 +598,7 @@ void * fDoRunBpfCollectionPerfEventArray2(void * vargp)
 	else
 		fprintf(tunLogPtr, "%s %s: *qOCC_Hop_TimerID* timer created.\n", ms_ctime_buf, phase2str(current_phase));
 
-	timerRc = makeTimer("qOCC_TimerID", &qOCC_TimerID, gInterval);
+	timerRc = makeTimer("qOCC_TimerID", &qOCC_TimerID, gInterval, &sStartTimer);
 	if (timerRc)
 	{
 		fprintf(tunLogPtr, "%s %s: Problem creating timer *qOCC_TimerID*.\n", ms_ctime_buf, phase2str(current_phase));
@@ -580,6 +606,15 @@ void * fDoRunBpfCollectionPerfEventArray2(void * vargp)
 	}
 	else
 		fprintf(tunLogPtr, "%s %s: *qOCC_TimerID* timer created.\n", ms_ctime_buf, phase2str(current_phase));
+	
+	timerRc = makeTimer("qEvaluation_TimerID", &qEvaluation_TimerID, gInterval*10, &sStartEvaluationTimer);
+	if (timerRc)
+	{
+		fprintf(tunLogPtr, "%s %s: Problem creating timer *qEvaluation_TimerID*.\n", ms_ctime_buf, phase2str(current_phase));
+		return ((char *)1);
+	}
+	else
+		fprintf(tunLogPtr, "%s %s: *qEvaluation_TimerID* timer created.\n", ms_ctime_buf, phase2str(current_phase));
 	
 	fprintf(tunLogPtr,"%s %s: ***Queue occupancy threshold is set to %u\n", ms_ctime_buf, phase2str(current_phase), vQUEUE_OCCUPANCY_DELTA);
 
@@ -848,6 +883,29 @@ exit_program: {
 	}
 }
 
+void fStartEvaluationTimer(__u32 hop_key_hop_index)
+{
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	int vRetTimer;
+	
+	vRetTimer = timer_settime(qEvaluation_TimerID, 0, &sStartEvaluationTimer, (struct itimerspec *)NULL);
+	if (!vRetTimer)
+	{
+		vCanStartEvaluationTimer = 0;
+		if (vDebugLevel > 2)
+		{
+			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+			fprintf(tunLogPtr,"%s %s: ***INFO !!! INFO !!! Timer set to %u microseconds for Evaluation***\n",ms_ctime_buf, phase2str(current_phase), gInterval*10); 
+		}
+
+	}
+	else
+		fprintf(tunLogPtr,"%s %s: ***WARNING !!! WARNING !!! Could not set EvaluationTimer, vRetTimer = %d,  errno = to %d***\n",ms_ctime_buf, phase2str(current_phase), vRetTimer, errno); 
+return;
+}
+
 void EvaluateQOcc_and_HopDelay(__u32 hop_key_hop_index)
 {
 	time_t clk;
@@ -884,19 +942,25 @@ void EvaluateQOccUserInfo(__u32 hop_key_hop_index)
 
 	if (!vq_TimerIsSet)
 	{
-		vRetTimer = timer_settime(qOCC_TimerID, 0, &sStartTimer, (struct itimerspec *)NULL);
-		if (!vRetTimer)
+		if (vCanStartEvaluationTimer)
 		{
-			vq_TimerIsSet = 1;
-			curr_hop_key_hop_index = hop_key_hop_index;
-			if (vDebugLevel > 2)
+			vRetTimer = timer_settime(qOCC_TimerID, 0, &sStartTimer, (struct itimerspec *)NULL);
+			if (!vRetTimer)
 			{
-				gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-				fprintf(tunLogPtr,"%s %s: ***WARNING !!! WARNING !!! Timer set to %d microseconds for Queue Occupancy User Info***\n",ms_ctime_buf, phase2str(current_phase), gInterval); 
+				vq_TimerIsSet = 1;
+				curr_hop_key_hop_index = hop_key_hop_index;
+				if (vDebugLevel > 2)
+				{
+					gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+					fprintf(tunLogPtr,"%s %s: ***WARNING !!! WARNING !!! Timer set to %d microseconds for Queue Occupancy User Info***\n",ms_ctime_buf, phase2str(current_phase), gInterval); 
+				}
+
+				// Wait for evaluation timer before trying to start qOCC_TimerID again
+				fStartEvaluationTimer(hop_key_hop_index);
 			}
+			else
+				fprintf(tunLogPtr,"%s %s: ***WARNING !!! WARNING !!! Could not set Qinfo User InfoTimer, vRetTimer = %d,  errno = to %d***\n",ms_ctime_buf, phase2str(current_phase), vRetTimer, errno); 
 		}
-		else
-			fprintf(tunLogPtr,"%s %s: ***WARNING !!! WARNING !!! Could not set Qinfo User InfoTimer, vRetTimer = %d,  errno = to %d***\n",ms_ctime_buf, phase2str(current_phase), vRetTimer, errno); 
 	}
 
 	return;
@@ -1421,11 +1485,11 @@ void check_req(http_s *h, char aResp[])
 		}
 
         	sscanf(aNumber,"%lf", &vNewPacingRate);
-		sprintf(aResp,"Changed  maximum pacing rate from %.2f to %.2f%!\n", vMaxPacingRate*100.0, vNewPacingRate);
+		sprintf(aResp,"Changed  maximum pacing rate from %.2f to %.2f%%!\n", vMaxPacingRate*100.0, vNewPacingRate);
 		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change maximum pacing rate allowed from %.2f to %.2f***\n", ms_ctime_buf, phase2str(current_phase), vMaxPacingRate*100.0, vNewPacingRate);
 		vMaxPacingRate = vNewPacingRate/100.0;
-		fprintf(tunLogPtr,"%s %s: ***New pacing rate is %.2f%\n", ms_ctime_buf, phase2str(current_phase), vMaxPacingRate*100.0);
+		fprintf(tunLogPtr,"%s %s: ***New pacing rate is %.2f%%\n", ms_ctime_buf, phase2str(current_phase), vMaxPacingRate*100.0);
 		goto after_check;
 	}
 			
