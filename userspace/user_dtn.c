@@ -177,6 +177,7 @@ static int perf_buffer_poll_start = 0;
 //static time_t total_time_passed = 0;
 static double vRetransmissionRate = 0.0;
 static double vGlobal_average_tx_Gbits_per_sec = 0.0;
+static double vMaxPacingRate = 0.9; //90%
 int vResetPacingBack = 0;
 static int new_traffic = 0;
 static int rx_traffic = 0;
@@ -1398,6 +1399,37 @@ void check_req(http_s *h, char aResp[])
 		fprintf(tunLogPtr,"%s %s: ***New retransmission rate allowed is *%.5f***\n", ms_ctime_buf, phase2str(current_phase), vRetransmissionRateThreshold);
 		goto after_check;
 	}
+	
+	if (strstr(pReqData,"GET /-ct#pacing_rate#"))
+	{
+		/* Change the value of the retransmits allwoed per sec */
+		double vNewPacingRate = 0.0;
+		int countdots = 0;
+
+		char *p = (pReqData + sizeof("GET /-ct#pacing_rate#")) - 1;
+
+		while ((isdigit(*p) || (*p == '.')) && countdots <= 1)
+		{
+			if (*p == '.') countdots++;
+			aNumber[count++] = *p;
+			p++;
+		}
+        
+		if (countdots > 1)
+        	{
+			fprintf(tunLogPtr,"%s %s: ***Received **INVALID** request from Http Client to change maximum pacing rate. Number is invalid: *%s***\n", ms_ctime_buf, phase2str(current_phase), aNumber);
+			sprintf(aResp,"***ERROR: Number is invalid for pacing rate: *%s***\n", aNumber);
+			goto after_check;
+		}
+
+        	sscanf(aNumber,"%lf", &vNewPacingRate);
+		sprintf(aResp,"Changed  maximum pacing rate from %.2f to %.2f%!\n", vMaxPacingRate*100.0, vNewPacingRate);
+		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change maximum pacing rate allowed from %.2f to %.2f***\n", ms_ctime_buf, phase2str(current_phase), vMaxPacingRate*100.0, vNewPacingRate);
+		vMaxPacingRate = vNewPacingRate/100.0;
+		fprintf(tunLogPtr,"%s %s: ***New pacing rate is %.2f%\n", ms_ctime_buf, phase2str(current_phase), vMaxPacingRate*100.0);
+		goto after_check;
+	}
 			
 	if (strstr(pReqData,"GET /-ct#hop_late#"))
 	{
@@ -2443,7 +2475,7 @@ void fDoQinfoAssessment(unsigned int val)
         if (vRetransmissionRate > vRetransmissionRateThreshold)
         {
                 fprintf(tunLogPtr,"%s %s: ***WARNING***: the retransmission rate of %.5f is higher that the retansmission threshold of %.5f.\n", ms_ctime_buf, phase2str(current_phase), vRetransmissionRate, vRetransmissionRateThreshold);
-                sprintf(aNicSetting,"tc qdisc del dev %s root %s 2>/dev/null; tc qdisc add dev %s root fq maxrate %.2fgbit", netDevice, aQdiscVal, netDevice, (vGlobal_average_tx_Gbits_per_sec/4.0)*3.0);
+                sprintf(aNicSetting,"tc qdisc del dev %s root %s 2>/dev/null; tc qdisc add dev %s root fq maxrate %.2fgbit", netDevice, aQdiscVal, netDevice, (vGlobal_average_tx_Gbits_per_sec * vMaxPacingRate)); //90%
 
                 if (gTuningMode && (current_phase == LEARNING))
                 {
