@@ -18,6 +18,7 @@ static char * Usage = "This is an HTTP client to talk to Tuning Module. \
 		       \nUse \"tuncli -ct q_occ [value]\" to change the value of the queue occupancy delta. \
 		       \nUse \"tuncli -ct flow_sink [value]\" to change the value of the flow sink time delta. \
 		       \nUse \"tuncli -ct retrans_rate [value]\" to change maximum retransmission rate allowed.\
+		       \nUse \"tuncli -ct pacing_rate [value]\" to change pacing rate to use. This is a percentage value.\
 		       \nUse \"tuncli -rtt thresh [value]\" to change the value of the rtt threshold. \
 		       \nUse \"tuncli -rtt factor [value]\" to change the value of the rtt factor.\n";
 
