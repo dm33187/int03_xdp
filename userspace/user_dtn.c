@@ -3489,6 +3489,8 @@ finish_up:
 	if (found)
 	{
 		vRetransmissionRate = (total_retrans/(double)packets_sent) * 100.0;
+		fprintf(tunLogPtr,"%s %s: ***AAApackets_sent = %lu, total retransmissions so far  is %lu\n", 
+										ms_ctime_buf, phase2str(current_phase), packets_sent, total_retrans);
 
 		if ((vDebugLevel > 2) && ((countLog % COUNT_TO_LOG) == 0))
 		{
