@@ -188,6 +188,7 @@ static  int vIamASrcDtn = 0;
 static  int vIamADestDtn = 0;
 static double rtt_threshold = 2.0;
 static int rtt_factor = 4;
+void fStartEvaluationTimer(__u32);
 time_t calculate_delta_for_csv(void);
 time_t calculate_delta_for_csv(void)
 {
@@ -550,7 +551,7 @@ void qOCC_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
 	char activity[MAX_SIZE_TUNING_STRING];
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-	fprintf(tunLogPtr, "%s %s: ***Timer Alarm went off*** still having problems with Queue Occupancy User Info. Time to do something***\n",ms_ctime_buf, phase2str(current_phase)); 
+	fprintf(tunLogPtr, "%s %s: ***Timer Alarm went off*** still having problems with Queue Occupancy User Info. will check if we shoud trigger source***\n",ms_ctime_buf, phase2str(current_phase)); 
 	//***Do something here ***//
 	vq_TimerIsSet = 0;
 	sprintf(activity,"%s %s: ***hop_key.hop_index %X, Doing Something",ctime_buf, phase2str(current_phase), curr_hop_key_hop_index);
@@ -558,17 +559,23 @@ void qOCC_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
 	fflush(tunLogPtr);
 
 #if 1
-	Pthread_mutex_lock(&dtn_mutex);
-	strcpy(sMsg.msg, "Hello there!!! This is a Qinfo msg...\n");
-	sMsg.msg_no = htonl(QINFO_MSG);
-	sMsg.value = htonl(vQinfoUserValue);
-	sMsgSeqNo++;
-	sMsg.seq_no = htonl(sMsgSeqNo);
-	cdone = 1;
-	Pthread_cond_signal(&dtn_cond);
-	Pthread_mutex_unlock(&dtn_mutex);
+	if (vCanStartEvaluationTimer)
+	{
+		Pthread_mutex_lock(&dtn_mutex);
+		strcpy(sMsg.msg, "Hello there!!! This is a Qinfo msg...\n");
+		sMsg.msg_no = htonl(QINFO_MSG);
+		sMsg.value = htonl(vQinfoUserValue);
+		sMsgSeqNo++;
+		sMsg.seq_no = htonl(sMsgSeqNo);
+		cdone = 1;
+		Pthread_cond_signal(&dtn_cond);
+		Pthread_mutex_unlock(&dtn_mutex);
+
+		// Start and wait for (evaluation timer * 10) before trying to trigger source again
+		fStartEvaluationTimer(curr_hop_key_hop_index);
 #endif	
-	vq_WarningCount = 0;
+		vq_WarningCount = 0;
+	}
 	return;
 }
 
@@ -942,25 +949,19 @@ void EvaluateQOccUserInfo(__u32 hop_key_hop_index)
 
 	if (!vq_TimerIsSet)
 	{
-		if (vCanStartEvaluationTimer)
+		vRetTimer = timer_settime(qOCC_TimerID, 0, &sStartTimer, (struct itimerspec *)NULL);
+		if (!vRetTimer)
 		{
-			vRetTimer = timer_settime(qOCC_TimerID, 0, &sStartTimer, (struct itimerspec *)NULL);
-			if (!vRetTimer)
+			vq_TimerIsSet = 1;
+			curr_hop_key_hop_index = hop_key_hop_index;
+			if (vDebugLevel > 2)
 			{
-				vq_TimerIsSet = 1;
-				curr_hop_key_hop_index = hop_key_hop_index;
-				if (vDebugLevel > 2)
-				{
-					gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-					fprintf(tunLogPtr,"%s %s: ***WARNING !!! WARNING !!! Timer set to %d microseconds for Queue Occupancy User Info***\n",ms_ctime_buf, phase2str(current_phase), gInterval); 
-				}
-
-				// Wait for evaluation timer before trying to start qOCC_TimerID again
-				fStartEvaluationTimer(hop_key_hop_index);
+				gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+				fprintf(tunLogPtr,"%s %s: ***WARNING !!! WARNING !!! Timer set to %d microseconds for Queue Occupancy User Info***\n",ms_ctime_buf, phase2str(current_phase), gInterval); 
 			}
-			else
-				fprintf(tunLogPtr,"%s %s: ***WARNING !!! WARNING !!! Could not set Qinfo User InfoTimer, vRetTimer = %d,  errno = to %d***\n",ms_ctime_buf, phase2str(current_phase), vRetTimer, errno); 
 		}
+		else
+			fprintf(tunLogPtr,"%s %s: ***WARNING !!! WARNING !!! Could not set Qinfo User InfoTimer, vRetTimer = %d,  errno = to %d***\n",ms_ctime_buf, phase2str(current_phase), vRetTimer, errno); 
 	}
 
 	return;
@@ -1116,7 +1117,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 				if (vq_TimerIsSet)
 				{
 					if (vDebugLevel > 0)
-						fprintf(tunLogPtr, "%s %s: ***INFO:  queue_occupancy is %u which is lower than threshold. Turning off Timer***u\n", ms_ctime_buf, phase2str(current_phase), Qinfo);
+						fprintf(tunLogPtr, "%s %s: ***INFO:  queue_occupancy is %u which is lower than threshold. Turning off Timer***\n", ms_ctime_buf, phase2str(current_phase), Qinfo);
 
 					timer_settime(qOCC_TimerID, 0, &sDisableTimer, (struct itimerspec *)NULL);
 					vq_TimerIsSet = 0;
@@ -2727,6 +2728,13 @@ start:
 			fprintf(tunLogPtr,"%s %s: ***INFO***: Activity on link has stopped for now *** Turning off Queue occupancy and Hop Delay timer:",ms_ctime_buf, phase2str(current_phase));
 			timer_settime(qOCC_Hop_TimerID, 0, &sDisableTimer, (struct itimerspec *)NULL);
 			vq_h_TimerIsSet = 0;
+		}
+
+		if (!vCanStartEvaluationTimer)
+		{
+			fprintf(tunLogPtr,"%s %s: ***INFO***: Activity on link has stopped for now *** Turning off Evaluation timer:\n",ms_ctime_buf, phase2str(current_phase));
+			timer_settime(qEvaluation_TimerID, 0, &sDisableTimer, (struct itimerspec *)NULL);
+			vCanStartEvaluationTimer = 1;
 		}
 
 		if (shm_read(&vResetPacingBack, shm) && vResetPacingBack) //nothing happening - reset back the pacing
