@@ -1337,12 +1337,17 @@ void check_req(http_s *h, char aResp[])
 		int vNewDebugLevel = 0;
 		/* Change debug level of Tuning Module */
 		char *p = (pReqData + sizeof("GET /-d#")) - 1;
-		if (isdigit(*p))
+		while (isdigit(*p))
 		{
-			aNumber[count] = *p;
+			aNumber[count++] = *p;
+			p++;
 		}
 	
 		vNewDebugLevel = atoi(aNumber);
+
+		if (vNewDebugLevel > 10)
+			vNewDebugLevel = 10;
+		
 		sprintf(aResp,"Changed debug level of Tuning Module from %d to %d!\n", vDebugLevel, vNewDebugLevel);
 		
 		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
@@ -2712,7 +2717,7 @@ start:
 		vIamADestDtn = 0;
 		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 
-		if (vDebugLevel > 8)
+		if (vDebugLevel > 9)
 			fprintf(tunLogPtr,"%s %s: ***INFO***: Activity on link has stopped for now\n",ms_ctime_buf, phase2str(current_phase));
 
 		if (vq_TimerIsSet) //Turn off this timer since transmission has stopped
@@ -2778,7 +2783,7 @@ start:
 	}
 	else
 	{
-		if (vDebugLevel > 8)
+		if (vDebugLevel > 9)
 			fprintf(tunLogPtr,"%s %s: ***INFO***: Activity is on the link***\n",ms_ctime_buf, phase2str(current_phase));
 	}
 		
@@ -3345,7 +3350,8 @@ double fDoCpuMonitoring()
 return found;
 }
 
-#define COUNT_TO_LOG	100
+static int COUNT_TO_LOG	= 100;
+#define NUM_RATES_TO_USE 10
 void *doRunFindRetransmissionRate(void * vargp)
 {
 	time_t clk;
@@ -3364,11 +3370,13 @@ void *doRunFindRetransmissionRate(void * vargp)
         char * foundstr = 0;
 	int found = 0;
 	unsigned int countLog = 0;
-	unsigned int myCheck = 1;
+	double aSaveRates[NUM_RATES_TO_USE];
+	int x, vRateCount = 0;
+	int fRateArrayDone = 0;
 
 	while (aDest_Ip2[0] == 0 && !vIamASrcDtn)
 	{
-		if (vDebugLevel > 6)
+		if (vDebugLevel > 9)
 		{
 			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 			fprintf(tunLogPtr,"%s %s: ***Waiting on Peer (Dest) Ip addres***\n", ms_ctime_buf, phase2str(current_phase));
@@ -3383,6 +3391,13 @@ void *doRunFindRetransmissionRate(void * vargp)
 	sprintf(try,"%s","cat /sys/fs/bpf/tcp4");
 
 retrans:
+	if(vDebugLevel < 6)
+		COUNT_TO_LOG = 100;
+	if (vDebugLevel > 5)
+		COUNT_TO_LOG = 50;
+	if (vDebugLevel > 8)
+		COUNT_TO_LOG = 0; //dump more debug from here
+
 	total_retrans = 0;
 	packets_sent = 0;
 	//int_total_retrans = 0;
@@ -3441,7 +3456,7 @@ retrans:
 				if (count)
 				{
 				
-					if ((vDebugLevel > 8) && ((countLog % COUNT_TO_LOG) == 0))
+					if ((vDebugLevel > 8) && (countLog >= COUNT_TO_LOG))
 					{
 						fprintf(tunLogPtr,"%s %s: ***actual string with retransmission is \"%s\"", ms_ctime_buf, phase2str(current_phase),buffer);
 					}
@@ -3468,19 +3483,11 @@ retrans:
 					}
 
 
-					if (vDebugLevel > 7) //quick log
+					if ((vDebugLevel > 5) && (countLog >= COUNT_TO_LOG)) 
 					{
 						fprintf(tunLogPtr,"%s %s: ***pre_packets_sent = %lu, pre_total_retransmissions so far  is %lu\n", 
 								ms_ctime_buf, phase2str(current_phase), pre_packets_sent, pre_total_retrans);
-						fprintf(tunLogPtr,"%s %s: ***packets_sent = %lu, total retransmissions so far  is %lu\n", 
-								ms_ctime_buf, phase2str(current_phase), packets_sent, total_retrans);
 					}
-					else
-						if ((vDebugLevel > 5) && ((countLog % COUNT_TO_LOG) == 0)) //slow log
-						{
-							fprintf(tunLogPtr,"%s %s: ***packets_sent = %lu, total retransmissions so far  is %lu\n", 
-										ms_ctime_buf, phase2str(current_phase), packets_sent, total_retrans);
-						}
 
 					found = 1;
 				}
@@ -3496,46 +3503,71 @@ finish_up:
 	{
 		vRetransmissionRate = (total_retrans/(double)packets_sent) * 100.0;
 
-		int_total_retrans = total_retrans - int_total_retrans;
-		int_packets_sent = packets_sent - int_packets_sent;
+		if (packets_sent > int_packets_sent)
+		{
+			int_total_retrans = total_retrans - int_total_retrans;
+			int_packets_sent = packets_sent - int_packets_sent;
+		}
+		else
+			{
+				int_total_retrans = 0; //reset at end
+				int_packets_sent = 0;
+			}
 
 		if (int_packets_sent)
 			vIntRetransmissionRate = (int_total_retrans/(double)int_packets_sent) * 100.0;
 		else
 			vIntRetransmissionRate = 0.0;
 
-		if (myCheck < 10)
+		if (vRateCount < NUM_RATES_TO_USE)
 		{
-			vSomeTran = vSomeTran + vIntRetransmissionRate;
-			myCheck++;
+			aSaveRates[vRateCount] = vIntRetransmissionRate;
+			vRateCount++;
 		}
 		else
 			{
-				vSomeTran = vIntRetransmissionRate;
-				myCheck = 1;
+				fRateArrayDone = 1;
+				aSaveRates[0] = vIntRetransmissionRate;
+				vRateCount = 1;
 			}
 
-		vAvgRetransmissionRate = (vSomeTran / myCheck);
-
-		if ((vDebugLevel > 3) && previous_average_tx_Gbits_per_sec)
-			fprintf(tunLogPtr,"%s %s: ***AAApackets_sent = %lu, total retransmissions so far  is %lu, int_packets_sent = %lu, int_total_retrans = %lu, vSomeTran = %.5f, myCheck = %d\n", 
-							ms_ctime_buf, phase2str(current_phase), packets_sent, total_retrans, int_packets_sent, int_total_retrans, vSomeTran, myCheck);
-
-#if 0
-		if ((vDebugLevel > 3) && ((countLog % COUNT_TO_LOG) == 0))
+		vSomeTran = 0;
+		if (fRateArrayDone)
 		{
-			fprintf(tunLogPtr,"%s %s: Retransmission rate is %.5f\n", ms_ctime_buf, phase2str(current_phase), vRetransmissionRate);
+			for (x=0; x < NUM_RATES_TO_USE; x++)
+				vSomeTran = vSomeTran + aSaveRates[x];
+			
+			vSomeTran = vSomeTran/NUM_RATES_TO_USE;
 		}
-#endif		
-		countLog++; //otherwise would output too quickly
+		else
+			{
+				for (x=0; x < vRateCount; x++)
+					vSomeTran = vSomeTran + aSaveRates[x];
+				
+				if (vRateCount > 0)
+					vSomeTran = vSomeTran/vRateCount;
+			}
+
+		vAvgRetransmissionRate = vSomeTran;
+
+		if ((vDebugLevel > 3) && previous_average_tx_Gbits_per_sec && (countLog >= COUNT_TO_LOG))
+		{
+			if (int_total_retrans)
+				fprintf(tunLogPtr,"%s %s: ***RETRAN*** total packets_sent = %lu, total retransmissions = %lu, last_int_packets_sent = %lu, *NEW* last_int_retrans = %lu, vRateCount = %d\n", 
+							ms_ctime_buf, phase2str(current_phase), packets_sent, total_retrans, int_packets_sent, int_total_retrans, vRateCount);
+			else
+				fprintf(tunLogPtr,"%s %s: ***RETRAN*** total packets_sent = %lu, total retransmissions = %lu, last_int_packets_sent = %lu, last_int_retrans = %lu, vRateCount = %d\n", 
+							ms_ctime_buf, phase2str(current_phase), packets_sent, total_retrans, int_packets_sent, int_total_retrans, vRateCount);
+		}
+
 		int_packets_sent = packets_sent;
 		int_total_retrans = total_retrans;
 	}
 	else
 		{
-			int_total_retrans = int_packets_sent = myCheck = vSomeTran = 0;
-			if ((vDebugLevel > 4) && previous_average_tx_Gbits_per_sec)
-				fprintf(tunLogPtr,"%s %s: ***AAAnothing found packets_sent = %lu, total_retrans = %lu\n", 
+			int_total_retrans = int_packets_sent = vRateCount = vSomeTran = fRateArrayDone = 0;
+			if ((vDebugLevel > 4) && previous_average_tx_Gbits_per_sec && (countLog >= COUNT_TO_LOG))
+				fprintf(tunLogPtr,"%s %s: ***RETRAN*** No relevant packets found, packets_sent = %lu, total_retrans = %lu\n", 
 									ms_ctime_buf, phase2str(current_phase), packets_sent, total_retrans);
 		}
 
@@ -3543,11 +3575,16 @@ finish_up:
 
 	msleep(100); //sleep 100 millisecs
 
-	if ((vDebugLevel > 3) && previous_average_tx_Gbits_per_sec)
+	if ((vDebugLevel > 3) && previous_average_tx_Gbits_per_sec && (countLog >= COUNT_TO_LOG))
 	{
-		fprintf(tunLogPtr,"%s %s: Retransmission rate is %.5f,  Int_RetransmissionRate is %.5f, AvgRetransmissionRate is %.5f\n", 
-				ms_ctime_buf, phase2str(current_phase), vRetransmissionRate, vIntRetransmissionRate, vAvgRetransmissionRate);
+		fprintf(tunLogPtr,"%s %s: ***RETRAN*** Retransmission rate of transfer = %.5f,  Last_Interval_RetransmissionRate is %.5f, AvgRetransmissionRate over last %d rates is %.5f\n", 
+				ms_ctime_buf, phase2str(current_phase), vRetransmissionRate, vIntRetransmissionRate, NUM_RATES_TO_USE, vAvgRetransmissionRate);
 	}
+	
+	if (countLog >= COUNT_TO_LOG)
+		countLog = 0;
+	else	
+		countLog++; //otherwise would output too quickly
 
 	goto retrans;
 
@@ -3895,7 +3932,7 @@ rttstart:
 			highest_rtt = rtt;
 
 #if 1
-		if (vDebugLevel > 8 && previous_average_tx_Gbits_per_sec) 
+		if (vDebugLevel > 9 && previous_average_tx_Gbits_per_sec) 
 			fprintf(tunLogPtr,"%s %s: **rtt = %luus, highest rtt = %luus\n", ms_ctime_buf, phase2str(current_phase), rtt, highest_rtt);
 #endif
 	}
