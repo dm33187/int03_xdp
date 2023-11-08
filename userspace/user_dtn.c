@@ -3351,7 +3351,7 @@ return found;
 }
 
 static int COUNT_TO_LOG	= 100;
-#define NUM_RATES_TO_USE 10
+#define NUM_RATES_TO_USE 5
 void *doRunFindRetransmissionRate(void * vargp)
 {
 	time_t clk;
@@ -3364,7 +3364,7 @@ void *doRunFindRetransmissionRate(void * vargp)
 	unsigned long packets_sent = 0;
 	unsigned long int_total_retrans = 0;
 	unsigned long int_packets_sent = 0;
-	double vIntRetransmissionRate = 0, vSomeTran = 0, vAvgRetransmissionRate = 0;;
+	double vIntRetransmissionRate = 0, vSomeTran = 0, vAvgRetransmissionRate = 0, vTransferRetransmissionRate = 0;
 	unsigned long pre_total_retrans = 0;
 	unsigned long pre_packets_sent = 0;
         char * foundstr = 0;
@@ -3406,6 +3406,7 @@ retrans:
 	found = 0;
 	pre_total_retrans = 0;
 	pre_packets_sent = 0;
+	vTransferRetransmissionRate = 0;
 
 	if (!previous_average_tx_Gbits_per_sec)
 		msleep(1000); //nothing going on. Get some rest
@@ -3501,7 +3502,7 @@ finish_up:
 	pclose(pipe);
 	if (found)
 	{
-		vRetransmissionRate = (total_retrans/(double)packets_sent) * 100.0;
+		vTransferRetransmissionRate = (total_retrans/(double)packets_sent) * 100.0;
 
 		if (packets_sent > int_packets_sent)
 		{
@@ -3548,7 +3549,7 @@ finish_up:
 					vSomeTran = vSomeTran/vRateCount;
 			}
 
-		vAvgRetransmissionRate = vSomeTran;
+		vRetransmissionRate = vAvgRetransmissionRate = vSomeTran;
 
 		if ((vDebugLevel > 3) && previous_average_tx_Gbits_per_sec && (countLog >= COUNT_TO_LOG))
 		{
@@ -3578,7 +3579,7 @@ finish_up:
 	if ((vDebugLevel > 3) && previous_average_tx_Gbits_per_sec && (countLog >= COUNT_TO_LOG))
 	{
 		fprintf(tunLogPtr,"%s %s: ***RETRAN*** Retransmission rate of transfer = %.5f,  Last_Interval_RetransmissionRate is %.5f, AvgRetransmissionRate over last %d rates is %.5f\n", 
-				ms_ctime_buf, phase2str(current_phase), vRetransmissionRate, vIntRetransmissionRate, NUM_RATES_TO_USE, vAvgRetransmissionRate);
+				ms_ctime_buf, phase2str(current_phase), vTransferRetransmissionRate, vIntRetransmissionRate, NUM_RATES_TO_USE, vAvgRetransmissionRate);
 	}
 	
 	if (countLog >= COUNT_TO_LOG)
