@@ -3364,13 +3364,18 @@ void *doRunFindRetransmissionRate(void * vargp)
 	unsigned long packets_sent = 0;
 	unsigned long int_total_retrans = 0;
 	unsigned long int_packets_sent = 0;
+	unsigned long vSomeIntRetranTran = 0;
+	unsigned long vSomeIntPacketsTran  = 0;
 	double vIntRetransmissionRate = 0, vSomeTran = 0, vAvgRetransmissionRate = 0, vTransferRetransmissionRate = 0;
+	double vAvgIntRetransmissionRate = 0, vSomeIntTran = 0;
 	unsigned long pre_total_retrans = 0;
 	unsigned long pre_packets_sent = 0;
         char * foundstr = 0;
 	int found = 0;
 	unsigned int countLog = 0;
 	double aSaveRates[NUM_RATES_TO_USE];
+	unsigned long aSaveIntRetrans[NUM_RATES_TO_USE];
+	unsigned long aSaveIntPackets[NUM_RATES_TO_USE];
 	int x, vRateCount = 0;
 	int fRateArrayDone = 0;
 
@@ -3523,42 +3528,77 @@ finish_up:
 		if (vRateCount < NUM_RATES_TO_USE)
 		{
 			aSaveRates[vRateCount] = vIntRetransmissionRate;
+			aSaveIntRetrans[vRateCount] = int_total_retrans;
+			aSaveIntPackets[vRateCount] = int_packets_sent;
 			vRateCount++;
 		}
 		else
 			{
 				fRateArrayDone = 1;
 				aSaveRates[0] = vIntRetransmissionRate;
+				aSaveIntRetrans[0] = int_total_retrans;
+				aSaveIntPackets[0] = int_packets_sent;
 				vRateCount = 1;
 			}
 
 		vSomeTran = 0;
+		vSomeIntTran = 0;
+		vSomeIntRetranTran = 0;
+		vSomeIntPacketsTran  = 0;
 		if (fRateArrayDone)
 		{
 			for (x=0; x < NUM_RATES_TO_USE; x++)
+			{
 				vSomeTran = vSomeTran + aSaveRates[x];
+				vSomeIntRetranTran = vSomeIntRetranTran + aSaveIntRetrans[x];
+				vSomeIntPacketsTran  = vSomeIntPacketsTran + aSaveIntPackets[x];
+			}
 			
 			vSomeTran = vSomeTran/NUM_RATES_TO_USE;
+
+			if (vSomeIntPacketsTran)
+			{
+				vSomeIntTran = (vSomeIntRetranTran/(double)vSomeIntPacketsTran) * 100.0;
+				vSomeIntTran = vSomeIntTran/NUM_RATES_TO_USE;
+			}
+			else
+				vSomeIntTran = 0;
+
 		}
 		else
 			{
 				for (x=0; x < vRateCount; x++)
+				{
 					vSomeTran = vSomeTran + aSaveRates[x];
+					vSomeIntRetranTran = vSomeIntRetranTran + aSaveIntRetrans[x];
+					vSomeIntPacketsTran  = vSomeIntPacketsTran + aSaveIntPackets[x];
+				}
 				
 				if (vRateCount > 0)
+				{
 					vSomeTran = vSomeTran/vRateCount;
+				
+					if (vSomeIntPacketsTran)
+					{
+						vSomeIntTran = (vSomeIntRetranTran/(double)vSomeIntPacketsTran) * 100.0;
+						vSomeIntTran = vSomeIntTran/vRateCount;
+					}
+					else
+						vSomeIntTran = 0;
+				}
 			}
 
 		vRetransmissionRate = vAvgRetransmissionRate = vSomeTran;
+		vAvgIntRetransmissionRate = vSomeIntTran;
 
 		if ((vDebugLevel > 3) && previous_average_tx_Gbits_per_sec && (countLog >= COUNT_TO_LOG))
 		{
 			if (int_total_retrans)
-				fprintf(tunLogPtr,"%s %s: ***RETRAN*** total packets_sent = %lu, total retransmissions = %lu, last_int_packets_sent = %lu, *NEW* last_int_retrans = %lu, vRateCount = %d\n", 
-							ms_ctime_buf, phase2str(current_phase), packets_sent, total_retrans, int_packets_sent, int_total_retrans, vRateCount);
+				fprintf(tunLogPtr,"%s %s: ***RETRAN*** total packets_sent = %lu, total retransmissions = %lu, last_int_packets_sent = %lu, *NEW* last_int_retrans = %lu, vRateCount = %d, vSomeIntRetrans = %lu, vSomeIntPackets = %lu\n", 
+							ms_ctime_buf, phase2str(current_phase), packets_sent, total_retrans, int_packets_sent, int_total_retrans, vRateCount, vSomeIntRetranTran, vSomeIntPacketsTran);
 			else
-				fprintf(tunLogPtr,"%s %s: ***RETRAN*** total packets_sent = %lu, total retransmissions = %lu, last_int_packets_sent = %lu, last_int_retrans = %lu, vRateCount = %d\n", 
-							ms_ctime_buf, phase2str(current_phase), packets_sent, total_retrans, int_packets_sent, int_total_retrans, vRateCount);
+				fprintf(tunLogPtr,"%s %s: ***RETRAN*** total packets_sent = %lu, total retransmissions = %lu, last_int_packets_sent = %lu, last_int_retrans = %lu, vRateCount = %d, vSomeIntRetrans = %lu, vSomeIntPackets = %lu\n", 
+							ms_ctime_buf, phase2str(current_phase), packets_sent, total_retrans, int_packets_sent, int_total_retrans, vRateCount, vSomeIntRetranTran, vSomeIntPacketsTran);
 		}
 
 		int_packets_sent = packets_sent;
@@ -3578,8 +3618,8 @@ finish_up:
 
 	if ((vDebugLevel > 3) && previous_average_tx_Gbits_per_sec && (countLog >= COUNT_TO_LOG))
 	{
-		fprintf(tunLogPtr,"%s %s: ***RETRAN*** Retransmission rate of transfer = %.5f,  Last_Interval_RetransmissionRate is %.5f, AvgRetransmissionRate over last %d rates is %.5f\n", 
-				ms_ctime_buf, phase2str(current_phase), vTransferRetransmissionRate, vIntRetransmissionRate, NUM_RATES_TO_USE, vAvgRetransmissionRate);
+		fprintf(tunLogPtr,"%s %s: ***RETRAN*** Retransmission rate of transfer = %.5f,  Last_Interval_RetransmissionRate is %.5f, AvgRetransmissionRate over last %d rates is %.5f, AvgIntRetransmissionRate is %.5f\n", 
+				ms_ctime_buf, phase2str(current_phase), vTransferRetransmissionRate, vIntRetransmissionRate, NUM_RATES_TO_USE, vAvgRetransmissionRate, vAvgIntRetransmissionRate);
 	}
 	
 	if (countLog >= COUNT_TO_LOG)
