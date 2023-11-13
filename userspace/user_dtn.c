@@ -3588,8 +3588,9 @@ finish_up:
 				}
 			}
 
-		vRetransmissionRate = vAvgRetransmissionRate = vSomeTran;
-		vAvgIntRetransmissionRate = vSomeIntTran;
+		//vRetransmissionRate = vAvgRetransmissionRate = vSomeTran;
+		vAvgRetransmissionRate = vSomeTran;
+		vRetransmissionRate = vAvgIntRetransmissionRate = vSomeIntTran;
 
 		if ((vDebugLevel > 3) && previous_average_tx_Gbits_per_sec && (countLog >= COUNT_TO_LOG))
 		{
