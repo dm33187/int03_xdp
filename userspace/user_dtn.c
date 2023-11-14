@@ -270,6 +270,11 @@ static void timerHandler( int sig, siginfo_t *si, void *uc )
 
 static int makeTimer( char *name, timer_t *timerID, int expires_usecs, struct itimerspec *startTmr)
 {
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	int timerRc = 0;
+
 	struct sigevent         te;
 	struct sigaction        sa;
 	int                     sigNo = SIGRTMIN;
@@ -299,7 +304,10 @@ static int makeTimer( char *name, timer_t *timerID, int expires_usecs, struct it
 	*/
 	startTmr->it_value.tv_sec = sec;
 	startTmr->it_value.tv_nsec = nsec;
-	fprintf(stdout,"sec in timer = %ld, nsec = %ld, expires_usec = %d\n", startTmr->it_value.tv_sec, startTmr->it_value.tv_nsec, expires_usecs);
+
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	fprintf(tunLogPtr, "%s %s: timer name = %s, sec in timer = %ld, nsec = %ld, expires_usec = %d\n", 
+				ms_ctime_buf, phase2str(current_phase), name, startTmr->it_value.tv_sec, startTmr->it_value.tv_nsec, expires_usecs);
 
 	return(0);
 }
@@ -476,7 +484,7 @@ static time_t qinfo_clk_max = 0;
 static char qinfo_ms_ctime_buf_max[MS_CTIME_BUF_LEN];
 
 static __u32 vQinfoUserValue = 0; //Eventually Initialize this value with vQUEUE_OCCUPANCY_DELTA
-static double vRetransmissionRateThreshold = 2; //Percentage 
+static double vRetransmissionRateThreshold = 1; //Percentage 
 static __u32 ingress_time = 0;
 static __u32 egress_time = 0;
 static __u32 hop_hop_latency_threshold = 0;
@@ -3619,8 +3627,8 @@ finish_up:
 
 	if ((vDebugLevel > 3) && previous_average_tx_Gbits_per_sec && (countLog >= COUNT_TO_LOG))
 	{
-		fprintf(tunLogPtr,"%s %s: ***RETRAN*** Retransmission rate of transfer = %.5f,  Last_Interval_RetransmissionRate is %.5f, AvgRetransmissionRate over last %d rates is %.5f, AvgIntRetransmissionRate is %.5f\n", 
-				ms_ctime_buf, phase2str(current_phase), vTransferRetransmissionRate, vIntRetransmissionRate, NUM_RATES_TO_USE, vAvgRetransmissionRate, vAvgIntRetransmissionRate);
+		fprintf(tunLogPtr,"%s %s: ***RETRAN*** Retransmission rate of transfer = %.5f,  AvgRetransmissionRate over last %d rates is %.5f, AvgIntRetransmissionRate is %.5f\n", 
+				ms_ctime_buf, phase2str(current_phase), vTransferRetransmissionRate, NUM_RATES_TO_USE, vAvgRetransmissionRate, vAvgIntRetransmissionRate);
 	}
 	
 	if (countLog >= COUNT_TO_LOG)
