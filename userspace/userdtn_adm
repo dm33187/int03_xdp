@@ -227,13 +227,22 @@ case "$1" in
 
         # Start the user_dtn
 	sleep 1
-	echo "Loading object and pinning map paths..."
+	echo "Loading and pinning iter object for tracking retransmits..."
+	if [ -f /sys/fs/bpf/tcp4 ]
+	then
+		echo "iter object already exists, removing first..."
+		rm -f /sys/fs/bpf/tcp4
+	fi
+	bpftool iter pin ./bpf_iter_tcp4.bpf.o /sys/fs/bpf/tcp4 2>/tmp/tuningmodstart.out
+
+	echo "Loading sink object and pinning map paths..."
 	if [ "$attach_type" != "xdpoffload" ]
         then
-                bpftool prog load int-sink2+filter.bpf.o /sys/fs/bpf/test pinmaps /sys/fs/bpf/test_maps/ 2>/tmp/tuningmodstart.out
+                bpftool prog load int-sink2+filter.bpf.o /sys/fs/bpf/test pinmaps /sys/fs/bpf/test_maps/ 2>>/tmp/tuningmodstart.out
         else
-                bpftool prog load int-sink2+filter.bpf.o /sys/fs/bpf/test dev $nic pinmaps /sys/fs/bpf/test_maps/ 2>/tmp/tuningmodstart.out
+                bpftool prog load int-sink2+filter.bpf.o /sys/fs/bpf/test dev $nic pinmaps /sys/fs/bpf/test_maps/ 2>>/tmp/tuningmodstart.out
         fi
+
 	echo "Attaching bpf program to network interface using $attach_type..."
 	bpftool net attach $attach_type pinned /sys/fs/bpf/test dev $nic
 	sleep 1
@@ -289,6 +298,13 @@ case "$1" in
 	if [ -f /sys/fs/bpf/test ]
 	then
 		rm -f /sys/fs/bpf/test
+	fi
+	
+	sleep 1
+	echo "Removing iter files no longer needed..."
+	if [ -f /sys/fs/bpf/tcp4 ]
+	then
+		rm -f /sys/fs/bpf/tcp4
 	fi
 
         sleep 2                 # for delay before possible re-start
