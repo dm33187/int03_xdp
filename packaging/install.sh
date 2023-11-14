@@ -107,6 +107,7 @@ copy_files()
 	mv plotgraph.py $pathname
 	mv conv_csv_to_json.py $pathname
 	mv int-sink2+filter.bpf.o $pathname
+	mv bpf_iter_tcp4.bpf.o $pathname
 }
 
 finish_up()
