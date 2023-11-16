@@ -3,6 +3,7 @@
 USER_TARGETS := user_dtn
 MY_TARGETS := myclient
 MYBINN_TARGETS := mybinncli
+MYBINN_SERV_TARGETS := sim_server
 
 LIBBPF_DIR = ../libbpf/src/
 COMMON_DIR = ../common/

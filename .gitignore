@@ -24,3 +24,4 @@ testing/modules/tuningMod/tuningModule.mod.c
 userspace/user_dtn
 userspace/myclient
 userspace/mybinncli
+userspace/sim_server
