@@ -154,7 +154,7 @@ void fMake_Binn_Client_Object(struct ClientBinnMsg *pMsg, binn * obj)
 void fRead_Binn_Server_Object(struct ServerBinnMsg *pMsg, binn * obj)
 {
 	struct ServerBinnMsg *tMsg;
-	int value = BUFFER_SIZE_FROM_SERVER;
+	int value = 0;
 
 	tMsg = binn_object_blob(obj, "Msg", &value);
 	
