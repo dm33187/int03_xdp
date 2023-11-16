@@ -83,6 +83,8 @@ In order to compile and work with the Tuning Module, do the following:
 		*	```git submodule init```
 		*	```git submodule update```
 
+-	Run ```sudo apt update```
+-	Run ```sudo apt install pkg-config```
 -	Run ```make``` in ```userspace/``` to create Tuning Module's binaries
 -	Run ```make``` in ```cli/``` to create a directory call ```tmp``` which contains the binary ```tuncli```
 
