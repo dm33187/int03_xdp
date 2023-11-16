@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: (GPL-2.0 OR BSD-2-Clause)
+MYBINN_TARGETS := mybinncli
+MYBINN_SERV_TARGETS := sim_server
+CC ?= gcc
+CFLAGS ?= -g
+
+all: $(MYBINN_TARGETS) $(MYBINN_SERV_TARGETS)
+
+
+clean:
+	rm -f $(MYBINN_TARGETS) $(MYBINN_SERV_TARGETS)
+
+$(MYBINN_TARGETS): %: %.c 
+	$(CC) -Wall -g -o $@ $< -lbinn
+
+$(MYBINN_SERV_TARGETS): %: %.c
+	$(CC) -Wall -g -o $@ $< -lbinn -lpthread
