@@ -6,6 +6,8 @@
 tt*
 test*
 assess-tuning/dtn_tune
+packaging/SATuning_Module.zip
+packaging/ASSESSdtntune.zip
 testing/xdp_loader
 testing/xdp_loader_light
 cli/facil_io_7.0/
