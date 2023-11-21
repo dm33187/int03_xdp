@@ -25,6 +25,50 @@ int vPort = 5525; //default listening port
 int vShutdown = 0;
 FILE * pHpnServerLogPtr = 0;
 
+void gettime(time_t *clk, char *ctime_buf)
+{
+	*clk = time(NULL);
+	ctime_r(clk,ctime_buf);
+	ctime_buf[24] = ':';
+
+	return;
+}
+void gettimeWithMilli(time_t *clk, char *ctime_buf, char *ms_ctime_buf)
+{
+	struct timespec ts;
+	timespec_get(&ts, TIME_UTC);
+	*clk = ts.tv_sec;
+	struct tm *t = localtime(clk);
+	ctime_r(clk,ctime_buf);
+	ctime_buf[19] = '.';
+	ctime_buf[20] = '\0';
+	sprintf(ms_ctime_buf,"%s%03ld %04d:", ctime_buf, ts.tv_nsec/1000000, t->tm_year+1900);
+
+	return;
+}
+
+enum work_phases {
+	STARTING,
+	RUNNING,
+	SHUTDOWN
+};
+
+enum work_phases current_phase = STARTING;
+
+#define NUM_NAMES_MAX 3
+const char *workflow_names[NUM_NAMES_MAX] = {
+	"STARTING", "RUNNING", "SHUTDOWN"
+};
+
+
+const char *phase2str(enum work_phases phase)
+{
+	if (phase < WORKFLOW_NAMES_MAX)
+		return workflow_names[phase];
+
+	return NULL;
+}
+
 #define SA struct sockaddr
 #define	LISTENQ	1024	/* 2nd argument to listen() */
 /* prototypes for socket wrapper functions */
@@ -43,6 +87,9 @@ static void err_doit(int, int, const char *, va_list);
 static void
 err_doit(int errnoflag, int level, const char *fmt, va_list ap)
 {
+	time_t clk;
+        char ctime_buf[27];
+        char ms_ctime_buf[MS_CTIME_BUF_LEN];
 	int errno_save, n;
 	char buf[MAXLINE + 1];
 
@@ -67,6 +114,10 @@ err_doit(int errnoflag, int level, const char *fmt, va_list ap)
 			fflush(stdout);         /* in case stdout and stderr are the same */
 			fputs(buf, stderr);
 			fflush(stderr);
+			
+			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+			fprintf(pHpnServerLogPtr,"\n%s %s: ***Hpn Client fd error =* %s*\n", ms_ctime_buf, phase2str(current_phase), buf);
+			fflush(pHpnServerLogPtr);
 		}
 	
 	return;
@@ -146,50 +197,6 @@ Listen(int fd, int backlog)
 		err_sys("listen error");
 }
 /* end Listen */
-
-void gettime(time_t *clk, char *ctime_buf)
-{
-	*clk = time(NULL);
-	ctime_r(clk,ctime_buf);
-	ctime_buf[24] = ':';
-
-	return;
-}
-void gettimeWithMilli(time_t *clk, char *ctime_buf, char *ms_ctime_buf)
-{
-	struct timespec ts;
-	timespec_get(&ts, TIME_UTC);
-	*clk = ts.tv_sec;
-	struct tm *t = localtime(clk);
-	ctime_r(clk,ctime_buf);
-	ctime_buf[19] = '.';
-	ctime_buf[20] = '\0';
-	sprintf(ms_ctime_buf,"%s%03ld %04d:", ctime_buf, ts.tv_nsec/1000000, t->tm_year+1900);
-
-	return;
-}
-
-enum work_phases {
-	STARTING,
-	RUNNING,
-	SHUTDOWN
-};
-
-enum work_phases current_phase = STARTING;
-
-#define NUM_NAMES_MAX 3
-const char *workflow_names[NUM_NAMES_MAX] = {
-	"STARTING", "RUNNING", "SHUTDOWN"
-};
-
-
-const char *phase2str(enum work_phases phase)
-{
-	if (phase < WORKFLOW_NAMES_MAX)
-		return workflow_names[phase];
-
-	return NULL;
-}
 
 int str_cli(int sockfd, struct ServerBinnMsg *sThisMsg);
 void fDoHpnAssessment(unsigned int val, int sockfd);
@@ -277,6 +284,19 @@ void * doProcessHpnClientReq(void * arg)
 			Close(sockfd);
 			return (NULL);         /* connection closed by other end */
 		}
+		else
+			if (n < 0)
+			{
+				if (vDebugLevel > 0)
+				{
+					fprintf(pHpnServerLogPtr,"\n%s %s: ***read error on connection***\n", 
+										ms_ctime_buf, phase2str(current_phase));
+					fflush(pHpnServerLogPtr);
+				}
+
+				Close(sockfd);
+				return (NULL);         /* connection closed by other end */
+			}
 
 #if 0
 		if (vDebugLevel > 1)
