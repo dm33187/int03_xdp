@@ -11,7 +11,7 @@
 #define CTIME_BUF_LEN           27
 #define MS_CTIME_BUF_LEN        48
 
-int vDebugLevel = 2;
+int vDebugLevel = 1;
 int vPort = 5525; //default listening port
 int vShutdown = 0;
 FILE * pHpnClientLogPtr = 0;
