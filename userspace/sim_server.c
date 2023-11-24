@@ -20,7 +20,7 @@ typedef struct {
 	char ** argv;
 } sArgv_t;
 
-int vDebugLevel = 2;
+int vDebugLevel = 1;
 int vPort = 5525; //default listening port
 int vShutdown = 0;
 FILE * pHpnServerLogPtr = 0;
