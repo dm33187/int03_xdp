@@ -304,14 +304,10 @@ static int makeTimer( char *name, timer_t *timerID, int expires_usecs, struct it
 	*/
 	startTmr->it_value.tv_sec = sec;
 	startTmr->it_value.tv_nsec = nsec;
-<<<<<<< HEAD
-	fprintf(stdout,"sec in timer = %ld, nsec = %ld, expires_usec = %d\n", startTmr->it_value.tv_sec, startTmr->it_value.tv_nsec, expires_usecs);
-=======
 
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 	fprintf(tunLogPtr, "%s %s: timer name = %s, sec in timer = %ld, nsec = %ld, expires_usec = %d\n", 
 				ms_ctime_buf, phase2str(current_phase), name, startTmr->it_value.tv_sec, startTmr->it_value.tv_nsec, expires_usecs);
->>>>>>> 38d19d2eb4a5770b667a0b2b5977cdfab27f24ad
 
 	return(0);
 }
@@ -529,25 +525,14 @@ void qEvaluation_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
 	time_t clk;
 	char ctime_buf[27];
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
-<<<<<<< HEAD
 
 	vCanStartEvaluationTimer = 1;
 
-	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-	fprintf(tunLogPtr, "%s %s: ***Evaluation Timer done. Resetting***\n",ms_ctime_buf, phase2str(current_phase));
-	fflush(tunLogPtr);
-
-        return;
-=======
-	
-	vCanStartEvaluationTimer = 1;
-	
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 	fprintf(tunLogPtr, "%s %s: ***Evaluation Timer done. Resetting***\n",ms_ctime_buf, phase2str(current_phase)); 
 	fflush(tunLogPtr);
 
 	return;
->>>>>>> 38d19d2eb4a5770b667a0b2b5977cdfab27f24ad
 }
 
 void qOCC_Hop_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
@@ -574,11 +559,7 @@ void qOCC_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
 	char activity[MAX_SIZE_TUNING_STRING];
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-<<<<<<< HEAD
 	fprintf(tunLogPtr, "%s %s: ***Timer Alarm went off*** still having problems with Queue Occupancy User Info. Will check if we should trigger source***\n",ms_ctime_buf, phase2str(current_phase)); 
-=======
-	fprintf(tunLogPtr, "%s %s: ***Timer Alarm went off*** still having problems with Queue Occupancy User Info. will check if we shoud trigger source***\n",ms_ctime_buf, phase2str(current_phase)); 
->>>>>>> 38d19d2eb4a5770b667a0b2b5977cdfab27f24ad
 	//***Do something here ***//
 	vq_TimerIsSet = 0;
 	sprintf(activity,"%s %s: ***hop_key.hop_index %X, Doing Something",ctime_buf, phase2str(current_phase), curr_hop_key_hop_index);
@@ -932,11 +913,7 @@ void fStartEvaluationTimer(__u32 hop_key_hop_index)
 	char ctime_buf[27];
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
 	int vRetTimer;
-<<<<<<< HEAD
-
-=======
 	
->>>>>>> 38d19d2eb4a5770b667a0b2b5977cdfab27f24ad
 	vRetTimer = timer_settime(qEvaluation_TimerID, 0, &sStartEvaluationTimer, (struct itimerspec *)NULL);
 	if (!vRetTimer)
 	{
@@ -944,20 +921,12 @@ void fStartEvaluationTimer(__u32 hop_key_hop_index)
 		if (vDebugLevel > 2)
 		{
 			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-<<<<<<< HEAD
-			fprintf(tunLogPtr,"%s %s: ***INFO !!! INFO !!! Timer set to %u microseconds for Evaluation***\n",ms_ctime_buf, phase2str(current_phase), gInterval*10);
-=======
 			fprintf(tunLogPtr,"%s %s: ***INFO !!! INFO !!! Timer set to %u microseconds for Evaluation***\n",ms_ctime_buf, phase2str(current_phase), gInterval*10); 
->>>>>>> 38d19d2eb4a5770b667a0b2b5977cdfab27f24ad
 		}
 
 	}
 	else
-<<<<<<< HEAD
-		fprintf(tunLogPtr,"%s %s: ***WARNING !!! WARNING !!! Could not set EvaluationTimer, vRetTimer = %d,  errno = to %d***\n",ms_ctime_buf, phase2str(current_phase), vRetTimer, errno);
-=======
 		fprintf(tunLogPtr,"%s %s: ***WARNING !!! WARNING !!! Could not set EvaluationTimer, vRetTimer = %d,  errno = to %d***\n",ms_ctime_buf, phase2str(current_phase), vRetTimer, errno); 
->>>>>>> 38d19d2eb4a5770b667a0b2b5977cdfab27f24ad
 return;
 }
 
