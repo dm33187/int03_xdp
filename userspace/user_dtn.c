@@ -29,14 +29,10 @@
 
 #ifdef HPNSSH_QFACTOR_BINN
 #include "binncli.h"
-void fMake_Binn_Server_Object(struct PeerMsg *pMsg, binn * obj)
+int str_cli(int sockfd, struct ServerBinnMsg *sThisMsg);
+void fMake_Binn_Server_Object(struct ServerBinnMsg *pMsg, binn * obj)
 {
-	binn_object_set_uint32(obj, "msg_type", pMsg->msg_no);
-	binn_object_set_uint32(obj, "op", pMsg->value);
-	binn_object_set_uint32(obj, "hop_latency", pMsg->hop_latency);
-	binn_object_set_uint32(obj, "queue_occupancy", pMsg->queue_occupancy);
-	binn_object_set_uint32(obj, "switch_id", pMsg->switch_id);
-	binn_object_set_str(obj, "timestamp", pMsg->timestamp);
+	binn_object_set_blob(obj, "Msg", pMsg, sizeof(struct ServerBinnMsg));
         
 	return;
 }
@@ -2192,8 +2188,8 @@ void fDoHpnRead(unsigned int val, int sockfd)
 	time_t clk;
 	char ctime_buf[27];
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
-	struct PeerMsg sRetMsg;
-	struct PeerMsg sRetMsg2;
+	struct ServerBinnMsg sRetMsg;
+	struct ServerBinnMsg sRetMsg2;
 	int y,n;
 	struct timeval tv;
 	struct timespec ts;
@@ -2207,10 +2203,10 @@ void fDoHpnRead(unsigned int val, int sockfd)
 	
 #ifdef HPNSSH_QFACTOR_BINN 
 	//BINN objects are cross platform - no need for big endian, littl endian worries - so sayeth the binn repo
-	sRetMsg.msg_no = HPNSSH_MSG;
-	sRetMsg.value = HPNSSH_READ_FS;
-	sRetMsg2.msg_no = HPNSSH_MSG;
-	sRetMsg2.value = HPNSSH_READ_FS;
+	sRetMsg.msg_type = HPNSSH_MSG;
+	sRetMsg.op = HPNSSH_READ_FS;
+	sRetMsg2.msg_type = HPNSSH_MSG;
+	sRetMsg2.op = HPNSSH_READ_FS;
 #else
 	sRetMsg.msg_no = htonl(HPNSSH_MSG);
 	sRetMsg.value = htonl(HPNSSH_READ_FS);
@@ -4576,7 +4572,11 @@ void read_sock(int sockfd)
 	}
 }
 
+#ifdef HPNSSH_QFACTOR_BINN
+int str_cli(int sockfd, struct ServerBinnMsg *sThisMsg) //str_cli09
+#else
 int str_cli(int sockfd, struct PeerMsg *sThisMsg) //str_cli09
+#endif
 {
 	int y;
 #ifdef HPNSSH_QFACTOR_BINN
