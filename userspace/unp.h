@@ -94,7 +94,9 @@ struct PeerMsg {
 	char * pm;
 };
 /*****************/
+#ifndef HPNSSH_QFACTOR_BINN  
 int str_cli(int sockfd, struct PeerMsg *sThisMsg);
+#endif
 void     process_request(int);
 void     read_sock(int);
 //void     str_cli(FILE *, int);
