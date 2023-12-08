@@ -269,7 +269,6 @@ static int makeTimer( char *name, timer_t *timerID, int expires_usecs, struct it
 	time_t clk;
 	char ctime_buf[27];
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
-	int timerRc = 0;
 
 	struct sigevent         te;
 	struct sigaction        sa;
@@ -2201,18 +2200,11 @@ void fDoHpnRead(unsigned int val, int sockfd)
 	if (vDebugLevel > 6)
 		fprintf(tunLogPtr,"%s %s: ***INFO***: In fDoHpnRead(), value is %u***\n", ms_ctime_buf, phase2str(current_phase), val);
 	
-#ifdef HPNSSH_QFACTOR_BINN 
 	//BINN objects are cross platform - no need for big endian, littl endian worries - so sayeth the binn repo
 	sRetMsg.msg_type = HPNSSH_MSG;
 	sRetMsg.op = HPNSSH_READ_FS;
 	sRetMsg2.msg_type = HPNSSH_MSG;
 	sRetMsg2.op = HPNSSH_READ_FS;
-#else
-	sRetMsg.msg_no = htonl(HPNSSH_MSG);
-	sRetMsg.value = htonl(HPNSSH_READ_FS);
-	sRetMsg2.msg_no = htonl(HPNSSH_MSG);
-	sRetMsg2.value = htonl(HPNSSH_READ_FS);
-#endif
 
 read_again:
 	Pthread_mutex_lock(&hpn_ret_mutex);
@@ -2268,29 +2260,18 @@ read_again:
 	
 	//memcpy(sRetMsg.timestamp, sHpnRetMsg.pts, MS_CTIME_BUF_LEN);
 	memcpy(sRetMsg.timestamp, sHpnRetMsg.timestamp, MS_CTIME_BUF_LEN);
-#ifdef HPNSSH_QFACTOR_BINN 
 	sRetMsg.hop_latency = sHpnRetMsg.hop_latency;
 	sRetMsg.queue_occupancy = sHpnRetMsg.queue_occupancy;
 	sRetMsg.switch_id = sHpnRetMsg.switch_id;
-#else
-	sRetMsg.hop_latency = htonl(sHpnRetMsg.hop_latency);
-	sRetMsg.queue_occupancy = htonl(sHpnRetMsg.queue_occupancy);
-	sRetMsg.switch_id = htonl(sHpnRetMsg.switch_id);
-#endif
+	
 	sHpnRetMsg.pts = 0;
 
 	if(sHpnRetMsg2.pts)
 	{
 		memcpy(sRetMsg2.timestamp, sHpnRetMsg2.pts, MS_CTIME_BUF_LEN);
-#ifdef HPNSSH_QFACTOR_BINN 
        		sRetMsg2.hop_latency = sHpnRetMsg2.hop_latency;
         	sRetMsg2.queue_occupancy = sHpnRetMsg2.queue_occupancy;
         	sRetMsg2.switch_id = sHpnRetMsg2.switch_id;
-#else
-       		sRetMsg2.hop_latency = htonl(sHpnRetMsg2.hop_latency);
-        	sRetMsg2.queue_occupancy = htonl(sHpnRetMsg2.queue_occupancy);
-        	sRetMsg2.switch_id = htonl(sHpnRetMsg2.switch_id);
-#endif
 		sHpnRetMsg2.pts = 0;
 		two = 1;
 	}
@@ -2321,8 +2302,8 @@ void fDoHpnReadAll(unsigned int val, int sockfd)
 	time_t clk;
 	char ctime_buf[27];
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
-	struct PeerMsg sRetMsg;
-	struct PeerMsg sRetMsg2;
+	struct ServerBinnMsg sRetMsg;
+	struct ServerBinnMsg sRetMsg2;
 	int y,n;
 	struct timeval tv;
 	struct timespec ts;
@@ -2334,20 +2315,12 @@ void fDoHpnReadAll(unsigned int val, int sockfd)
 	if (vDebugLevel > 0)
 		fprintf(tunLogPtr,"%s %s: ***INFO***: In fDoHpnReadAll(), value is %u***\n", ms_ctime_buf, phase2str(current_phase), val);
 	
-	strcpy(sRetMsg.msg, "Hello there!!! Got your ReadAll message..., Here's some data\n");
-	strcpy(sRetMsg2.msg, "Hello there!!! Got your ReadAll message..., Here's some data\n");
-#ifdef HPNSSH_QFACTOR_BINN 
 	//BINN objects are cross platform - no need for big endian, littl endian worries - so sayeth the binn repo
-	sRetMsg.msg_no = HPNSSH_MSG;
-	sRetMsg.value = HPNSSH_READALL_FS;
-	sRetMsg2.msg_no = HPNSSH_MSG;
-	sRetMsg2.value = HPNSSH_READALL_FS;
-#else
-	sRetMsg.msg_no = htonl(HPNSSH_MSG);
-	sRetMsg.value = htonl(HPNSSH_READALL_FS);
-	sRetMsg2.msg_no = htonl(HPNSSH_MSG);
-	sRetMsg2.value = htonl(HPNSSH_READALL_FS);
-#endif
+	sRetMsg.msg_type = HPNSSH_MSG;
+	sRetMsg.op = HPNSSH_READALL_FS;
+	sRetMsg2.msg_type = HPNSSH_MSG;
+	sRetMsg2.op = HPNSSH_READALL_FS;
+
 read_again:
 	Pthread_mutex_lock(&hpn_ret_mutex);
 	if (gettimeofday(&tv, NULL) < 0)
@@ -2406,33 +2379,17 @@ read_again:
 //check here	
 	//memcpy(sRetMsg.timestamp, sHpnRetMsg.pts, MS_CTIME_BUF_LEN);
 	memcpy(sRetMsg.timestamp, sHpnRetMsg.timestamp, MS_CTIME_BUF_LEN);
-#ifdef HPNSSH_QFACTOR_BINN 
 	sRetMsg.hop_latency = sHpnRetMsg.hop_latency;
 	sRetMsg.queue_occupancy = sHpnRetMsg.queue_occupancy;
 	sRetMsg.switch_id = sHpnRetMsg.switch_id;
-	sRetMsg.seq_no = ++sMsgSeqNo;
-#else
-	sRetMsg.hop_latency = htonl(sHpnRetMsg.hop_latency);
-	sRetMsg.queue_occupancy = htonl(sHpnRetMsg.queue_occupancy);
-	sRetMsg.switch_id = htonl(sHpnRetMsg.switch_id);
-	sRetMsg.seq_no = htonl(++sMsgSeqNo);
-#endif
 	sHpnRetMsg.pts = 0;	
 
 	if(sHpnRetMsg2.pts)
 	{
 		memcpy(sRetMsg2.timestamp, sHpnRetMsg2.pts, MS_CTIME_BUF_LEN);
-#ifdef HPNSSH_QFACTOR_BINN 
        		sRetMsg2.hop_latency = sHpnRetMsg2.hop_latency;
         	sRetMsg2.queue_occupancy = sHpnRetMsg2.queue_occupancy;
         	sRetMsg2.switch_id = sHpnRetMsg2.switch_id;
-		sRetMsg2.seq_no = ++sMsgSeqNo;	
-#else
-       		sRetMsg2.hop_latency = htonl(sHpnRetMsg2.hop_latency);
-        	sRetMsg2.queue_occupancy = htonl(sHpnRetMsg2.queue_occupancy);
-        	sRetMsg2.switch_id = htonl(sHpnRetMsg2.switch_id);
-		sRetMsg2.seq_no = htonl(++sMsgSeqNo);	
-#endif
 		sHpnRetMsg2.pts = 0;
 		two = 1;
 	}
@@ -2489,16 +2446,15 @@ void fDoHpnStart(unsigned int val, int sockfd)
         time_t clk;
         char ctime_buf[27];
         char ms_ctime_buf[MS_CTIME_BUF_LEN];
-	struct PeerMsg sRetMsg;
+	struct ServerBinnMsg sRetMsg;
        
 	memset(&sRetMsg,0,sizeof(sRetMsg));
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 	if (vDebugLevel > 1)
         	fprintf(tunLogPtr,"%s %s: ***INFO***: In fDoHpnStart(), value is %u***\n", ms_ctime_buf, phase2str(current_phase), val);
 
-	strcpy(sRetMsg.msg, "Hello there!!! Got your start message...\n");
-        sRetMsg.msg_no = htonl(HPNSSH_MSG);
-        sRetMsg.value = htonl(199);;
+        sRetMsg.msg_type = htonl(HPNSSH_MSG);
+        sRetMsg.op = 199;
 	str_cli(sockfd, &sRetMsg);
 return;
 }
