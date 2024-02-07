@@ -59,7 +59,7 @@ Note that some settings have a minimum, default and maximum values:
 
 a. net.core.rmem_max 
 The net.core.rmem_max attribute defines the size of the buffer that receives 
-UDP packets. The recommended value is 67108864. 
+UDP packets. The recommended value is 1147483647. 
 Note: We found concerning information in the literature that says that setting 
 this attribute over 26 MB caused increased packet drop internally in the 
 Linux kernel. Additional review and evaluation is needed for rmem_max. (some
@@ -68,7 +68,7 @@ whether tcp or udp.)
 
 b. net.core.wmem_max 
 The net.core.wmem_max attribute defines the size of the buffer that writes UDP 
-packets. The recommended value is 67108864. 
+packets. The recommended value is 1147483647. 
 
 c. net.ipv4.tcp_congestion_control 
 The net.ipv4.tcp_congestion_control attribute is used to achieve congestion 
@@ -106,12 +106,12 @@ latency on Linux machines. The recommended setting is “fq”.
 f. net.ipv4.tcp_rmem        
 The net.ipv4.tcp_rmem attribute is the amount of memory in bytes for read 
 (receive) buffers per open socket. It contains the minimum, default and maximum 
-values.  The recommended values are 4096 87380 33554432. 
+values.  The recommended values are 4096 87380 1147483647. 
 
 g. net.ipv4.tcp_wmem 
 The net.ipv4.tcp_wmem attribute is the amount of memory in bytes for write 
 (transmit) buffers per open socket. It contains the minimum, default and maximum
-values.  The recommended values are 4096 65536 33554432. 
+values.  The recommended values are 4096 65536 1147483647. 
 
 gdv_100.sh 
 ==========
