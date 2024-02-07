@@ -60,8 +60,7 @@ There are also two relevant directories here:
 
 **Part 2**
 
-There are two known dependencies, apart from compilation requirements at this point. 
--	This package requires 'bpftool' and 'bpftrace' utilities to be installed on the system
+See below under "Compile and Build" section for known dependencies and packages that need to be installed. 
 
 There are a few relevant directories here:
 
@@ -72,7 +71,13 @@ There are a few relevant directories here:
 -	Contains source for a HTTP client that is used as a CLI for sending instructions to
 	or receiving information from the Tuning Module
 
-**To Compile:**
+**To Compile and Build, the following packages should be installed:**
+
+- clang
+- bpftool v5.12.0+
+- bpftrace
+- GNU make
+- git
 
 In order to compile and work with the Tuning Module, do the following:
 -	Initialize the git submodule ```libbpf```
