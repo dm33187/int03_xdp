@@ -2956,7 +2956,7 @@ start:
                         
 		while (!aDest_Dtn_IPs[vLastIpFound].dest_ip_addr && vIpCount)
 		{
-			if (vDebugLevel > 5)
+			if (vDebugLevel > 8)
 				fprintf(tunLogPtr,"%s %s: ***looking for app ip addrs vLastIpFound= %d, ...vIpCount = %d***\n", ms_ctime_buf, phase2str(current_phase), vLastIpFound, vIpCount);
 			vIpCount--;
                         vLastIpFound++;
@@ -4701,7 +4701,7 @@ rttstart:
 
 			while (!aDest_Dtn_IPs[vLastIpPinged].dest_ip_addr && count)
 			{
-				if (vDebugLevel > 5)
+				if (vDebugLevel > 8)
 					fprintf(tunLogPtr,"%s %s: ***looking for ping ip addrs vLastIpPinged= %d, ...count = %d***\n", ms_ctime_buf, phase2str(current_phase), vLastIpPinged, count);
 				count--;
 				vLastIpPinged++;
