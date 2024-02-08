@@ -2861,13 +2861,12 @@ void fDoQinfoAssessment(unsigned int val, char aSrc_Ip[], char aDest_Ip[], __u32
                 if (gTuningMode && (current_phase == LEARNING))
                 {
                         current_phase = TUNING;
-                        fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current average transmitted bytes on the link is %.2f. Will adjust the pacing with the following:\n",
+                        fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current average transmitted bytes on the link is %.2f Gb/s. Will adjust the pacing based on this value.\n",
                                                                                                                                                         ms_ctime_buf, phase2str(current_phase), vGlobal_average_tx_Gbits_per_sec);
-                        fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the flow. Current average transmitted bytes on this flow is %.2f. Will adjust the pacing with the following:\n",
-                                                                                                                                                        ms_ctime_buf, phase2str(current_phase), vThis_app_tx_Gbits_per_sec);
-                        fprintf(tunLogPtr,"%s %s: ***WARNING***: *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
+                        fprintf(tunLogPtr,"%s %s: ****INFO*****: Current average transmitted bytes on this flow is %.2f Gb/s. \n", ms_ctime_buf, phase2str(current_phase), vThis_app_tx_Gbits_per_sec);
+                        fprintf(tunLogPtr,"%s %s: ***WARNING***: Adjusting using *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
                         system(aNicSetting);
-                        fprintf(tunLogPtr,"%s %s: ***WARNING***: !!!!Pacing has been adjusted!!!!\n", ms_ctime_buf, phase2str(current_phase));
+                        //fprintf(tunLogPtr,"%s %s: ***WARNING***: !!!!Pacing has been adjusted!!!!\n", ms_ctime_buf, phase2str(current_phase));
                         current_phase = LEARNING;
                         vResetPacingBack = 1;
 			shm_write(shm, &vResetPacingBack);
@@ -2878,9 +2877,9 @@ void fDoQinfoAssessment(unsigned int val, char aSrc_Ip[], char aDest_Ip[], __u32
                 else
                         if (current_phase == TUNING)
                         {
-                                fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current average transmitted bytes on the link is %.2f. Will adjust the pacing with the following:\n",
+                                fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current average transmitted bytes on the link is %.2f Gb/s. Will adjust the pacing based on this value.\n",
                                                                                                                                                                 ms_ctime_buf, phase2str(current_phase), vGlobal_average_tx_Gbits_per_sec);
-                                fprintf(tunLogPtr,"%s %s: ***WARNING***: *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
+                                fprintf(tunLogPtr,"%s %s: ***WARNING***: Adjusting using *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
                                 system(aNicSetting);
                                 fprintf(tunLogPtr,"%s %s: ***WARNING***: !!!!Pacing has been adjusted!!!!\n", ms_ctime_buf, phase2str(current_phase));
                                 vResetPacingBack = 1;
@@ -2888,7 +2887,7 @@ void fDoQinfoAssessment(unsigned int val, char aSrc_Ip[], char aDest_Ip[], __u32
                         }
                         else
                                 {
-                                        fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current average transmitted bytes on the link is %.2f. Try running the following:\n",
+                                        fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current average transmitted bytes on the link is %.2f Gb/s. Try running the following:\n",
                                                                                                                                                         ms_ctime_buf, phase2str(current_phase), vGlobal_average_tx_Gbits_per_sec);
                                         fprintf(tunLogPtr,"%s %s: ***WARNING***: \"%s\"\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
                                 }
