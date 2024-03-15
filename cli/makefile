@@ -15,7 +15,7 @@
 
 # binary name and location
 ifndef NAME
-NAME=tuncli
+NAME=tunclibin
 endif
 
 # a temporary folder that will be cleared out and deleted between fresh builds
