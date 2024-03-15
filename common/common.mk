@@ -44,6 +44,8 @@ KERN_USER_H ?= $(wildcard common_kern_user.h)
 
 CFLAGS ?= -I$(LIBBPF_DIR)/build/usr/include/ -g
 CFLAGS += -I../headers/
+CFLAGS += -I/usr/include/glib-2.0
+CFLAGS += -I/usr/lib/x86_64-linux-gnu/glib-2.0/include
 CFLAGS += -I$(FACILIO_DIR)/lib/facil/
 CFLAGS += -I$(FACILIO_DIR)/lib/facil/http
 CFLAGS += -I$(FACILIO_DIR)/lib/facil/fiobj
@@ -115,7 +117,7 @@ $(COMMON_OBJS): %.o: %.h
 
 $(USER_TARGETS): %: %.c  $(OBJECT_LIBBPF) Makefile $(COMMON_MK) $(COMMON_OBJS) $(OTHER_OBJS) $(FACILIO_OBJS) $(KERN_USER_H) $(EXTRA_DEPS)
 	$(CC) -Wall -Wno-unused-label $(CFLAGS) $(LDFLAGS) -o $@ $(COMMON_OBJS) $(OTHER_OBJS) $(FACILIO_OBJS) -lm -lpthread \
-	 $< $(LIBS) 
+	 $< $(LIBS) -lglib-2.0 -lrdkafka
 
 $(MY_TARGETS): %: %.c  Makefile $(COMMON_MK) $(MY_OBJS) $(EXTRA_DEPS) 
 	$(CC) -Wall -Wno-unused-label -g -o $@ $(MY_OBJS) $< 
