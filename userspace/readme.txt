@@ -29,9 +29,13 @@ control how the Tuning Module operates.  So far, there are 10 parameters
 that can be used.  The following is an explanation for each one: 
 
 a. evaluation timer  
-The evaluation time parameter is the time that the tuning module will wait 
-before reevalualting new metadata from the Collector  Module. It is measured 
-in microseconds and has a default value of 500000. (500 ms) 
+The evaluation timer parameter is the time, using a signal, that the Tuning Module 
+will wait after first receiving some indication from the Collector Module about 
+some state, before taking action if that state still exists after the time 
+expires. This parameter is used with the queue occupancy, the queue occupancy 
+and the hop delay together, and is also multiplied by 10 and used to defer action 
+if said action is already in the process of being taken. It is measured in 
+microseconds and has a default value of 500000. (500 ms).
  
 b. learning_mode_only 
 The learning_mode_only parameter is used to tell the Tuning Module if it should 
@@ -98,7 +102,7 @@ Note that some settings have a minimum, default and maximum values:
 
 a. net.core.rmem_max 
 The net.core.rmem_max attribute defines the size of the buffer that receives 
-UDP packets. The recommended value is 67108864. 
+UDP packets. The recommended value is 1147483647. 
 Note: We found concerning information in the literature that says that setting 
 this attribute over 26 MB caused increased packet drop internally in the 
 Linux kernel. Additional review and evaluation is needed for rmem_max. (some 
@@ -107,7 +111,7 @@ whether tcp or udp.) 
 
 b. net.core.wmem_max 
 The net.core.wmem_max attribute defines the size of the buffer that writes UDP 
-packets. The recommended value is 67108864. 
+packets. The recommended value is 1147483647. 
 
 c. net.ipv4.tcp_congestion_control 
 The net.ipv4.tcp_congestion_control attribute is used to achieve congestion 
@@ -145,12 +149,12 @@ latency on Linux machines. The recommended setting is “fq”.
 f. net.ipv4.tcp_rmem        
 The net.ipv4.tcp_rmem attribute is the amount of memory in bytes for read 
 (receive) buffers per open socket. It contains the minimum, default and maximum 
-values.  The recommended values are 4096 87380 33554432. 
+values.  The recommended values are 4096 87380 1147483647. 
 
 g. net.ipv4.tcp_wmem 
 The net.ipv4.tcp_wmem attribute is the amount of memory in bytes for write 
 (transmit) buffers per open socket. It contains the minimum, default and maximum
-values.  The recommended values are 4096 65536 33554432. 
+values.  The recommended values are 4096 65536 1147483647. 
 
 gdv_100.sh
 ==========
