@@ -26,6 +26,12 @@
 #include "unp.h"
 #include "user_dtn.h"
 
+#define SMSGS_BUFFER_SIZE 10
+int sMsgsIn = 0;
+int sMsgsOut = 0;
+unsigned int vHouseKeepingTime = 10000000; //10 million usecs = 10 secs
+int vHouseTime = 18;
+static double previous_average_tx_Gbits_per_sec = 0.0;
 
 #ifdef HPNSSH_QFACTOR_BINN
 #include "binncli.h"
@@ -180,8 +186,9 @@ static int new_traffic = 0;
 static int rx_traffic = 0;
 static time_t now_time = 0;
 static time_t last_time = 0;
-static  int vIamASrcDtn = 0;
-static  int vIamADestDtn = 0;
+static int vIamASrcDtn = 0;
+static int vIamADestDtn = 0;
+static int vJustGotConnected = 0;
 static double rtt_threshold = 2.0;
 static int rtt_factor = 4;
 void fStartEvaluationTimer(__u32);
@@ -204,7 +211,9 @@ time_t calculate_delta_for_csv(void)
 }
 
 pthread_mutex_t dtn_mutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_cond_t dtn_cond = PTHREAD_COND_INITIALIZER;
+//pthread_cond_t dtn_cond = PTHREAD_COND_INITIALIZER;
+pthread_cond_t full = PTHREAD_COND_INITIALIZER;
+pthread_cond_t empty = PTHREAD_COND_INITIALIZER;
 static int cdone = 0;
 #ifdef HPNSSH_QFACTOR
 pthread_mutex_t hpn_ret_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -215,11 +224,11 @@ struct PeerMsg sHpnRetMsg2;
 unsigned int hpnRetMsgSeqNo = 0;
 struct PeerMsg sTimeoutMsg;
 #endif
-static unsigned int sleep_count = 1;
 static double vGoodBitrateValue = 0.0;
 static double vGoodBitrateValueThatDoesntNeedMessage = 0.0;
-struct PeerMsg sMsg;
+struct PeerMsg sMsg[SMSGS_BUFFER_SIZE];
 unsigned int sMsgSeqNo = 0;
+unsigned int sMsgSeqNoConn= 0;
 char aSrc_Ip[32];
 char aDest_Ip2[32];
 char aDest_Ip2_Binary[32];
@@ -235,16 +244,19 @@ static union uIP src_ip_addr;
 void qOCC_Hop_TimerID_Handler(int signum, siginfo_t *info, void *ptr);
 void qOCC_TimerID_Handler(int signum, siginfo_t *info, void *ptr);
 void qEvaluation_TimerID_Handler(int signum, siginfo_t *info, void *ptr);
+void tHouseKeeping_TimerID_Handler(int signum, siginfo_t *info, void *ptr);
 static void timerHandler( int sig, siginfo_t *si, void *uc );
 
 timer_t qOCC_Hop_TimerID; //when both Qinfo and Hop latency over threshhold
 timer_t qOCC_TimerID; // when Qinfo over some user defined value that will cause us to send message to peer to start TCP Pacing if appropiate
 timer_t qEvaluation_TimerID; // when Qinfo over some user defined value that will cause us to send message to peer to start TCP Pacing if appropiate
 timer_t rTT_TimerID;
+timer_t tHouseKeeping_TimerID; //Housekeeping, if necessary
 
 struct itimerspec sStartTimer;
 struct itimerspec sStartEvaluationTimer;
 struct itimerspec sDisableTimer;
+struct itimerspec sHouseKeepingTimer;
 
 static void timerHandler( int sig, siginfo_t *si, void *uc )
 {
@@ -260,11 +272,14 @@ static void timerHandler( int sig, siginfo_t *si, void *uc )
 			if ( *tidp == qEvaluation_TimerID )
 				qEvaluation_TimerID_Handler(sig, si, uc);
 			else
-				fprintf(stdout, "Timer handler incorrect***\n");
+				if ( *tidp == tHouseKeeping_TimerID )
+					tHouseKeeping_TimerID_Handler(sig, si, uc);
+				else
+					fprintf(stdout, "Timer handler incorrect***\n");
 	return;
 }
 
-static int makeTimer( char *name, timer_t *timerID, int expires_usecs, struct itimerspec *startTmr)
+static int makeTimer( char *name, timer_t *timerID, int expires_usecs, struct itimerspec *startTmr, int interval)
 {
 	time_t clk;
 	char ctime_buf[27];
@@ -299,6 +314,11 @@ static int makeTimer( char *name, timer_t *timerID, int expires_usecs, struct it
 	*/
 	startTmr->it_value.tv_sec = sec;
 	startTmr->it_value.tv_nsec = nsec;
+	if (interval)
+	{
+		startTmr->it_interval.tv_sec = sec;
+		startTmr->it_interval.tv_nsec = nsec;
+	}
 
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 	fprintf(tunLogPtr, "%s %s: timer name = %s, sec in timer = %ld, nsec = %ld, expires_usec = %d\n", 
@@ -431,6 +451,36 @@ typedef struct {
 	char ** argv;
 } sArgv_t;
 
+//Keep track of networks that we are talking t currently
+#define MAX_NUM_IP_ATTACHED 10
+__u32 currently_attached_networks = 0;
+__u32 currently_dest_networks = 0;
+
+typedef struct {
+	__u16 src_port;
+	time_t last_time_port;
+} sSrc_Dtn_Ports_t;
+
+typedef struct {
+#define MAX_NUM_PORTS_ON_THIS_IP 20
+	__u32 src_ip_addr;
+	time_t last_time_ip;
+        sSrc_Dtn_Ports_t aSrc_port[MAX_NUM_PORTS_ON_THIS_IP];
+	__u16 rsvd;
+	__u32 currently_attached_ports;
+	int currently_exist;
+} sSrc_Dtn_IPs_t;
+sSrc_Dtn_IPs_t aSrc_Dtn_IPs[MAX_NUM_IP_ATTACHED]; //when I am the dest, these are the sources
+
+typedef struct {
+	__u32 dest_ip_addr;
+	char aDest_Ip2[32];
+	char aDest_Ip2_Binary[32];
+	time_t last_time_ip;
+	int currently_exist;
+} sDest_Dtn_IPs_t;
+sDest_Dtn_IPs_t aDest_Dtn_IPs[MAX_NUM_IP_ATTACHED]; //when I am the source, these are the destinations
+
 #include "int_defs.h"
 #include "filter_defs.h"
 
@@ -513,6 +563,72 @@ void record_activity(char * pActivity);
 #define SIGALRM_MSG "SIGALRM received.\n"
 int vq_h_TimerIsSet = 0;
 int vq_TimerIsSet = 0;
+static int vTwiceInaRow = 0;
+
+void tHouseKeeping_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
+{
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	//while (pthread_mutex_trylock(&dtn_mutex) != 0);
+
+	if (vIamADestDtn)
+	{
+		for (int i = 0; i < MAX_NUM_IP_ATTACHED; i++)
+		{
+			if (aSrc_Dtn_IPs[i].src_ip_addr)
+			{
+				gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+				if ((clk - aSrc_Dtn_IPs[i].last_time_ip) >= vHouseTime) //probabaly not doing transfers anymore
+				{
+					if (vDebugLevel > 2)
+						fprintf(tunLogPtr, "%s %s: ***Housekeeping Timer removing attached IP address %u from DB, current_source_networks = %d***\n",
+											ms_ctime_buf, phase2str(current_phase), aSrc_Dtn_IPs[i].src_ip_addr, currently_attached_networks); 
+					memset(&aSrc_Dtn_IPs[i],0,sizeof(sSrc_Dtn_IPs_t));
+					currently_attached_networks--;
+				}
+			}
+		}
+		if (!currently_attached_networks)
+			vIamADestDtn = 0;
+	}
+
+#if 1
+	if (vIamASrcDtn)
+	{
+		for (int i = 0; i < MAX_NUM_IP_ATTACHED; i++)
+		{
+			if (aDest_Dtn_IPs[i].dest_ip_addr)
+			{
+				gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+				if ((clk - aDest_Dtn_IPs[i].last_time_ip) >= vHouseTime) //probabaly not doing transfers anymore
+				{
+					if (vDebugLevel > 4)
+						fprintf(tunLogPtr, "%s %s: ***Housekeeping Timer removing attached IP address %u from DB, current_dest_networks = %d***\n",
+											ms_ctime_buf, phase2str(current_phase), aDest_Dtn_IPs[i].dest_ip_addr, currently_dest_networks); 
+					memset(&aDest_Dtn_IPs[i],0,sizeof(sDest_Dtn_IPs_t));
+					currently_dest_networks--;
+				}
+			}
+		}
+		if (!currently_dest_networks)
+			vIamASrcDtn = 0;
+	}
+#endif
+
+        //Pthread_mutex_unlock(&dtn_mutex);
+
+	if (vDebugLevel > 8)
+	{
+		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+		fprintf(tunLogPtr, "%s %s: ***Housekeeping Timer done. previous_average_tx_Gbits_per_sec = %f***\n",ms_ctime_buf, phase2str(current_phase), previous_average_tx_Gbits_per_sec); 
+		fflush(tunLogPtr);
+	}
+
+	return;
+}
 
 void qEvaluation_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
 {
@@ -565,10 +681,11 @@ void qOCC_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
 	record_activity(activity); //make sure activity big enough to concatenate additional data -- see record_activity()
 	fflush(tunLogPtr);
 
+#if 0
 	if (vCanStartEvaluationTimer)
 	{
 		Pthread_mutex_lock(&dtn_mutex);
-		strcpy(sMsg.msg, "Hello there!!! This is a Qinfo msg...\n");
+		strcpy(sMsg[in].msg, "Hello there!!! This is a Qinfo msg...\n");
 		sMsg.msg_no = htonl(QINFO_MSG);
 		sMsg.value = htonl(vQinfoUserValue);
 		sMsgSeqNo++;
@@ -580,6 +697,28 @@ void qOCC_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
 		// Start and wait for (evaluation timer * 10) before trying to trigger source again
 		fStartEvaluationTimer(curr_hop_key_hop_index);
 	}
+#else
+	if (vCanStartEvaluationTimer)
+	{
+		Pthread_mutex_lock(&dtn_mutex);
+
+		while (((sMsgsIn + 1) % SMSGS_BUFFER_SIZE) == sMsgsOut)
+			pthread_cond_wait(&empty, &dtn_mutex);
+
+		strcpy(sMsg[sMsgsIn].msg, "Hello there!!! This is a Qinfo msg...\n");
+		sMsg[sMsgsIn].msg_no = htonl(QINFO_MSG);
+		sMsg[sMsgsIn].value = htonl(vQinfoUserValue);
+		sMsgSeqNo++;
+		sMsg[sMsgsIn].seq_no = htonl(sMsgSeqNo);
+		cdone = 1;
+		sMsgsIn = (sMsgsIn + 1) % SMSGS_BUFFER_SIZE;
+		Pthread_cond_signal(&full);
+		Pthread_mutex_unlock(&dtn_mutex);
+
+		// Start and wait for (evaluation timer * 10) before trying to trigger source again
+		fStartEvaluationTimer(curr_hop_key_hop_index);
+	}
+#endif
 	return;
 }
 
@@ -601,7 +740,7 @@ void * fDoRunBpfCollectionPerfEventArray2(void * vargp)
 
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 
-	timerRc = makeTimer("qOCC_Hop_TimerID", &qOCC_Hop_TimerID, gInterval, &sStartTimer);
+	timerRc = makeTimer("qOCC_Hop_TimerID", &qOCC_Hop_TimerID, gInterval, &sStartTimer, 0);
 	if (timerRc)
 	{
 		fprintf(tunLogPtr, "%s %s: Problem creating timer *qOCC_Hop_TimerID*.\n", ms_ctime_buf, phase2str(current_phase));
@@ -610,7 +749,7 @@ void * fDoRunBpfCollectionPerfEventArray2(void * vargp)
 	else
 		fprintf(tunLogPtr, "%s %s: *qOCC_Hop_TimerID* timer created.\n", ms_ctime_buf, phase2str(current_phase));
 
-	timerRc = makeTimer("qOCC_TimerID", &qOCC_TimerID, gInterval, &sStartTimer);
+	timerRc = makeTimer("qOCC_TimerID", &qOCC_TimerID, gInterval, &sStartTimer, 0);
 	if (timerRc)
 	{
 		fprintf(tunLogPtr, "%s %s: Problem creating timer *qOCC_TimerID*.\n", ms_ctime_buf, phase2str(current_phase));
@@ -619,7 +758,7 @@ void * fDoRunBpfCollectionPerfEventArray2(void * vargp)
 	else
 		fprintf(tunLogPtr, "%s %s: *qOCC_TimerID* timer created.\n", ms_ctime_buf, phase2str(current_phase));
 
-	timerRc = makeTimer("qEvaluation_TimerID", &qEvaluation_TimerID, gInterval*10, &sStartEvaluationTimer);
+	timerRc = makeTimer("qEvaluation_TimerID", &qEvaluation_TimerID, gInterval*10, &sStartEvaluationTimer, 0);
 	if (timerRc)
 	{
 		fprintf(tunLogPtr, "%s %s: Problem creating timer *qEvaluation_TimerID*.\n", ms_ctime_buf, phase2str(current_phase));
@@ -628,7 +767,7 @@ void * fDoRunBpfCollectionPerfEventArray2(void * vargp)
 	else
 		fprintf(tunLogPtr, "%s %s: *qEvaluation_TimerID* timer created.\n", ms_ctime_buf, phase2str(current_phase));
 	
-	timerRc = makeTimer("qEvaluation_TimerID", &qEvaluation_TimerID, gInterval*10, &sStartEvaluationTimer);
+	timerRc = makeTimer("qEvaluation_TimerID", &qEvaluation_TimerID, gInterval*10, &sStartEvaluationTimer, 0);
 	if (timerRc)
 	{
 		fprintf(tunLogPtr, "%s %s: Problem creating timer *qEvaluation_TimerID*.\n", ms_ctime_buf, phase2str(current_phase));
@@ -637,6 +776,23 @@ void * fDoRunBpfCollectionPerfEventArray2(void * vargp)
 	else
 		fprintf(tunLogPtr, "%s %s: *qEvaluation_TimerID* timer created.\n", ms_ctime_buf, phase2str(current_phase));
 	
+	timerRc = makeTimer("tHouseKeeping_TimerID", &tHouseKeeping_TimerID, vHouseKeepingTime, &sHouseKeepingTimer, 1);
+	if (timerRc)
+	{
+		fprintf(tunLogPtr, "%s %s: Problem creating timer *tHouseKeeping_TimerID*.\n", ms_ctime_buf, phase2str(current_phase));
+		return ((char *)1);
+	}
+	else
+		{
+                        int vRetTimer;
+			fprintf(tunLogPtr, "%s %s: *tHouseKeeping_TimerID* timer created.\n", ms_ctime_buf, phase2str(current_phase));
+                        vRetTimer = timer_settime(tHouseKeeping_TimerID, 0, &sHouseKeepingTimer, (struct itimerspec *)NULL);
+                        if (vRetTimer)
+                                fprintf(tunLogPtr, "%s %s: ***ERROR could not set Housekeeping Timer***",ms_ctime_buf, phase2str(current_phase));
+		}
+
+
+
 	fprintf(tunLogPtr,"%s %s: ***Queue occupancy threshold is set to %u\n", ms_ctime_buf, phase2str(current_phase), vQUEUE_OCCUPANCY_DELTA);
 
 open_maps: {
@@ -1035,6 +1191,10 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 
 	while (data + data_offset + sizeof(struct int_hop_metadata) <= data_end)
 	{
+		int vSrc_Dtn_IP_Found;
+		int First_IP_Index_Not_Exist;
+		int IP_Found_Index;
+
 		struct int_hop_metadata *hop_metadata_ptr = data + data_offset;
 		data_offset += sizeof(struct int_hop_metadata);
 		Qinfo = ntohl(hop_metadata_ptr->queue_info) & 0xffffff;
@@ -1185,35 +1345,113 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 		flow_threshold_update.hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		flow_hop_latency_threshold += ntohl(hop_metadata_ptr->egress_time) - ntohl(hop_metadata_ptr->ingress_time);
 		print_hop_key(&hop_key);
+//New stuff
+		
+		src_ip_addr.y = ntohl(hop_key.flow_key.src_ip);
+		src_port = hop_key.flow_key.src_port;
+		//check array
+		vSrc_Dtn_IP_Found = 0;
+		First_IP_Index_Not_Exist = 0;
+		IP_Found_Index = 0;
 #if 1
-                if ((src_ip_addr.y != ntohl(hop_key.flow_key.src_ip)) || new_traffic)
+		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+		for (int i = 0; i < MAX_NUM_IP_ATTACHED; i++)
+		{
+			if (aSrc_Dtn_IPs[i].src_ip_addr == src_ip_addr.y)
+			{
+				gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+				vSrc_Dtn_IP_Found = 1;
+				IP_Found_Index = i;
+				aSrc_Dtn_IPs[i].currently_exist = 1;
+				aSrc_Dtn_IPs[i].last_time_ip = clk;
+				new_traffic = 0;
+				break;
+			}
+			else
+				if (aSrc_Dtn_IPs[i].src_ip_addr == 0)
+				{
+					if (!First_IP_Index_Not_Exist)
+						First_IP_Index_Not_Exist = (i+1); //should only get set once
+				}
+		}
+
+		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+		if (!vSrc_Dtn_IP_Found) //Ip exist 
+		{
+			//aSrc_Dtn_IPs[Last_IP_Index_Not_Exist].src_ip_addr = src_ip_addr.y;	
+			//aSrc_Dtn_IPs[Last_IP_Index_Not_Exist].currently_exist = 1;
+			//aSrc_Dtn_IPs[Last_IP_Index_Not_Exist].last_time_ip = clk;
+			--First_IP_Index_Not_Exist;
+			aSrc_Dtn_IPs[First_IP_Index_Not_Exist].src_ip_addr = src_ip_addr.y;	
+			aSrc_Dtn_IPs[First_IP_Index_Not_Exist].currently_exist = 1;
+			aSrc_Dtn_IPs[First_IP_Index_Not_Exist].last_time_ip = clk;
+			currently_attached_networks++;
+			new_traffic = 1;
+//			if (vDebugLevel > 1)
+//				fprintf(tunLogPtr, "%s %s: ***new traffic got set here3333***\n", ms_ctime_buf, phase2str(current_phase));
+		}
+#endif
+#if 1
+		if (vDebugLevel > 9)
+		{
+			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+			if (vSrc_Dtn_IP_Found) //Ip exist 
+			{
+				fprintf(tunLogPtr, "%s %s: ***vSrc_Dtn_IP_Found src_ip_addr %u, src_port %d IP_Found_Index %d***\n", 
+						ms_ctime_buf, phase2str(current_phase), src_ip_addr.y, src_port, IP_Found_Index);
+			}
+			else
+				{
+					fprintf(tunLogPtr, "%s %s: ***vSrc_Dtn_IP_Found ****NOT FOUND***  src_ip_addr %u, src_port %d First_IP_Index_Not_Exist %d***\n", 
+								ms_ctime_buf, phase2str(current_phase), src_ip_addr.y, src_port, First_IP_Index_Not_Exist);
+				}
+		}
+#endif
+#if 1
+                if (new_traffic)
+                //if ((src_ip_addr.y != ntohl(hop_key.flow_key.src_ip)) || (src_port != hop_key.flow_key.src_port) || new_traffic)
                 //if ((src_ip_addr.y != ntohl(hop_key.flow_key.src_ip)) || new_traffic)
                 {
 			new_traffic = 0;
-			src_ip_addr.y = ntohl(hop_key.flow_key.src_ip);
+		//	src_ip_addr.y = ntohl(hop_key.flow_key.src_ip);
 		//	src_ip_addr.y = hop_key.flow_key.src_ip;
-			if (vDebugLevel > 4)
+			if (vDebugLevel > 1)
 			{
 				gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 				fprintf(tunLogPtr, "%s %s: ***new traffic???***\n", ms_ctime_buf, phase2str(current_phase));
 			}
-#if 1
+#if 0
 			vIamADestDtn  = 1;
                         Pthread_mutex_lock(&dtn_mutex);
                         strcpy(sMsg.msg, "Hello there!!! This is a Start of Traffic  msg...\n");
                         sMsg.msg_no = htonl(TEST_MSG);
 			sMsg.value = htonl(0);
-			sMsgSeqNo++;
-			sMsg.seq_no = htonl(sMsgSeqNo);
+			sMsgSeqNoConn++;
+			sMsg.seq_no = htonl(sMsgSeqNoConn);
                         cdone = 1;
                         Pthread_cond_signal(&dtn_cond);
+                        Pthread_mutex_unlock(&dtn_mutex);
+#elif 1
+			vIamADestDtn  = 1;
+                        Pthread_mutex_lock(&dtn_mutex);
+			while (((sMsgsIn + 1) % SMSGS_BUFFER_SIZE) == sMsgsOut)
+				pthread_cond_wait(&empty,&dtn_mutex);
+
+                        strcpy(sMsg[sMsgsIn].msg, "Hello there!!! This is a Start of Traffic  msg...\n");
+                        sMsg[sMsgsIn].msg_no = htonl(TEST_MSG);
+			sMsg[sMsgsIn].value = htonl(0);
+			sMsgSeqNoConn++;
+			sMsg[sMsgsIn].seq_no = htonl(sMsgSeqNoConn);
+                        cdone = 1;
+			sMsgsIn = (sMsgsIn + 1) % SMSGS_BUFFER_SIZE;
+                        Pthread_cond_signal(&full);
                         Pthread_mutex_unlock(&dtn_mutex);
 #endif
 		}
 #endif
 #ifdef INCLUDE_SRC_PORT
 		//src_port = ntohs(hop_key.flow_key.src_port);
-		src_port = hop_key.flow_key.src_port;
+		//src_port = hop_key.flow_key.src_port;
 #endif
 		hop_key.hop_index++;
 
@@ -1884,7 +2122,7 @@ return;
 
 #define BITRATE_INTERVAL 1
 #define KTUNING_DELTA	200000
-#define SECS_TO_WAIT_BITRATE_MESSAGE 30
+#define SECS_TO_WAIT_BITRATE_MESSAGE 60
 extern int my_tune_max;
 void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, int * suggested, int * nothing_done, int * tune, char aApplyDefTun[MAX_SIZE_SYSTEM_SETTING_STRING]);
 void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, int * suggested, int * nothing_done, int * tune, char aApplyDefTun[MAX_SIZE_SYSTEM_SETTING_STRING])
@@ -2070,7 +2308,6 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 }
 
 #define MAX_TUNING_APPLY	10
-static double previous_average_tx_Gbits_per_sec = 0.0;
 
 double fCheckAppBandwidth(char app[])
 {
@@ -2105,9 +2342,11 @@ double fCheckAppBandwidth(char app[])
 			vBandWidthInBits = ((8 * vBandWidthInBits) / 1000);	//really became kilobits here
 			vBandWidthInGBits = vBandWidthInBits/(double)(1000000);
 			
-			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-
-			fprintf(tunLogPtr,"%s %s: ***The app \"%s\" is using a Bandwidth of %.2f Gb/s\n", ms_ctime_buf, phase2str(current_phase), app, vBandWidthInGBits); //only need this one buffer
+			if (vDebugLevel > 2)
+			{
+				gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+				fprintf(tunLogPtr,"%s %s: ***The app \"%s\" is using a Bandwidth of %.2f Gb/s\n", ms_ctime_buf, phase2str(current_phase), app, vBandWidthInGBits); //only need this one buffer
+			}
 			while (fgets(buffer, 128, pipe) != NULL); //dump the buffers after
 			break;
 		}
@@ -2121,8 +2360,11 @@ double fCheckAppBandwidth(char app[])
 return 0;
 }
 
-
+#if 0
 double fGetAppBandWidth()
+#else
+double fGetAppBandWidth(char aDest_Ip2[], int index)
+#endif
 {
 
 	time_t clk;
@@ -2131,7 +2373,7 @@ double fGetAppBandWidth()
 	char buffer[256];
 	FILE *pipe;
 	char try[1024];
-	int found = 0;
+	int foundlsof = 0;
 	static int nolsof = 0;
 	char * q = 0;
 	char value[256];
@@ -2157,13 +2399,18 @@ double fGetAppBandWidth()
 		return 0;
 	}
 
-	found = 1;
+	foundlsof = 1;
 
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	if (vDebugLevel > 5)
+		fprintf(tunLogPtr,"\n%s %s: ***Getting app bandwidth for ****%s***\n", ms_ctime_buf, phase2str(current_phase), aDest_Ip2);
 	while (!feof(pipe))
 	{
 		// use buffer to read and add to result
 		if (fgets(buffer, 256, pipe) != NULL)
 		{
+			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+			aDest_Dtn_IPs[index].last_time_ip = clk; //traffic still on this link
 			memset(value,0,256);
 			q = strchr(buffer,' ');
 			if (q)
@@ -2183,16 +2430,17 @@ double fGetAppBandWidth()
 
 	pclose(pipe);
 
-	if (!found)
+	if (!foundlsof)
 	{
 		nolsof = 1;
 		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-		fprintf(tunLogPtr,"\n%s %s: ***!!!ERROR!!!**** Could not find \"lsof\" to get App Bandwidth***\n", ms_ctime_buf, phase2str(current_phase));
+		if (vDebugLevel > 2)
+			fprintf(tunLogPtr,"\n%s %s: ***!!!ERROR!!!**** Could not find \"lsof\" to get App Bandwidth***\n", ms_ctime_buf, phase2str(current_phase));
 	}
 
 	fflush(tunLogPtr);
 
-return found;
+return foundlsof;
 }
 
 #ifdef HPNSSH_QFACTOR
@@ -2611,6 +2859,7 @@ void * fDoRunGetThresholds(void * vargp)
 	int tune = 1; //1 = up, 2 = down - tune up initially
 	static unsigned long count = 0;
 	static int vFirstTimeThru = 1;
+	int vLastIpFound = 0, vIpCount = 0;
 
 	sprintf(aNicSetting,"tc qdisc del dev %s root fq 2>/dev/null", netDevice);
 
@@ -2619,9 +2868,26 @@ void * fDoRunGetThresholds(void * vargp)
 	/*sprintf(try,"bpftrace -e \'BEGIN { @name;} kfunc:dev_get_stats { $nd = (struct net_device *) args->dev; @name = $nd->name; } kretfunc:dev_get_stats /@name == \"%s\"/ { $nd = (struct net_device *) args->dev; $rtnl = (struct rtnl_link_stats64 *) args->storage; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); time(\"%s\"); exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu","%S");*/
 
 start:
-	if (vDebugLevel > 2 && previous_average_tx_Gbits_per_sec && vIamASrcDtn)
+	if (previous_average_tx_Gbits_per_sec && vIamASrcDtn)
 	{
-		fGetAppBandWidth();
+		vIpCount = MAX_NUM_IP_ATTACHED;
+                        
+		while (!aDest_Dtn_IPs[vLastIpFound].dest_ip_addr && vIpCount)
+		{
+			if (vDebugLevel > 5)
+				fprintf(tunLogPtr,"%s %s: ***looking for app ip addrs vLastIpFound= %d, ...vIpCount = %d***\n", ms_ctime_buf, phase2str(current_phase), vLastIpFound, vIpCount);
+			vIpCount--;
+                        vLastIpFound++;
+                        if (vLastIpFound == MAX_NUM_IP_ATTACHED)
+				vLastIpFound = 0;
+                }
+		if (vIpCount)
+		{
+			fGetAppBandWidth(aDest_Dtn_IPs[vLastIpFound].aDest_Ip2, vLastIpFound);
+                        vLastIpFound++;
+                        if (vLastIpFound == MAX_NUM_IP_ATTACHED)
+				vLastIpFound = 0;
+		}
 	//	sleep(1);
 	}
 #if 1
@@ -2702,14 +2968,16 @@ start:
 	else
 		fprintf(tunLogPtr,"%s %s: ***INFO***: Activity on the link ****  Mode %d Pacing %d\n",ms_ctime_buf, phase2str(current_phase), gTuningMode, vResetPacingBack);
 #endif
-	if (!tx_kbits_per_sec)
+	if (!tx_kbits_per_sec && !rx_kbits_per_sec) //sometimes links with longer RTTs take a while to show transmit/receive bits on a link
 	{
-		vIamASrcDtn = 0; //reset
-		vIamADestDtn = 0;
 		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 
 		if (vDebugLevel > 9)
-			fprintf(tunLogPtr,"%s %s: ***INFO***: Activity on link has stopped for now\n",ms_ctime_buf, phase2str(current_phase));
+			fprintf(tunLogPtr,"%s %s: ***INFO***: Activity on link has stopped for now, TwiceInaRow = %d\n",ms_ctime_buf, phase2str(current_phase), vTwiceInaRow);
+
+		if (vTwiceInaRow);
+		else
+			vTwiceInaRow = 1;
 
 		if (vq_TimerIsSet) //Turn off this timer since transmission has stopped
 		{
@@ -2773,6 +3041,7 @@ start:
 	}
 	else
 	{
+		vTwiceInaRow = 0;
 		if (vDebugLevel > 9)
 			fprintf(tunLogPtr,"%s %s: ***INFO***: Activity is on the link***\n",ms_ctime_buf, phase2str(current_phase));
 	}
@@ -3393,7 +3662,7 @@ void *doRunFindRetransmissionRate(void * vargp)
 	int x, vRateCount = 0;
 	int fRateArrayDone = 0;
 
-	while (aDest_Ip2[0] == 0 && !vIamASrcDtn)
+	while (aDest_Ip2[0] == 0)
 	{
 		if (vDebugLevel > 9)
 		{
@@ -3404,12 +3673,27 @@ void *doRunFindRetransmissionRate(void * vargp)
 		sleep(3);
 	}
 	
+	while (!vIamASrcDtn)
+	{
+		if (vDebugLevel > 9)
+		{
+			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+			fprintf(tunLogPtr,"%s %s: ***Waiting to become a source DTN to start Retransmission Rate thread**\n", ms_ctime_buf, phase2str(current_phase));
+			fflush(tunLogPtr);
+		}
+		sleep(3);
+	}
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 	fprintf(tunLogPtr,"%s %s: ***Starting Find Retransmission Rate thread ...***\n", ms_ctime_buf, phase2str(current_phase));	
 
 	sprintf(try,"%s","cat /sys/fs/bpf/tcp4");
 
 retrans:
+	while (!vIamASrcDtn)
+	{
+		//went back to not being a src dtn at the moment
+		msleep(2000);
+	}
 	if(vDebugLevel < 6)
 		COUNT_TO_LOG = 100;
 	if (vDebugLevel > 5)
@@ -3646,8 +3930,11 @@ finish_up:
 
 return (char *) 0;
 }
-
+#if 0
 double fFindRttUsingPing()
+#else
+double fFindRttUsingPing(char aDest_Ip2[])
+#endif
 {
 	time_t clk;
 	char ctime_buf[27];
@@ -3929,6 +4216,10 @@ void * fDoRunFindHighestRtt(void * vargp)
 	long rtt = 0, highest_rtt = 0;
 	double highest_rtt_from_bpftrace = 0.0;
 	double highest_rtt_from_ping = 0.0;
+#if 1
+	int vLastIpPinged = 0;
+	int count = 0;
+#endif
 	int applied = 0, suggested = 0, nothing_done = 0;
 	int tune = 1; //1 = up, 2 = down - tune up initially
 
@@ -3946,7 +4237,35 @@ rttstart:
 
 		if (vIamASrcDtn)
 		{
+#if 0
 			highest_rtt_from_ping = fFindRttUsingPing();
+#else
+			count = MAX_NUM_IP_ATTACHED;
+
+			while (!aDest_Dtn_IPs[vLastIpPinged].dest_ip_addr && count)
+			{
+				if (vDebugLevel > 5)
+					fprintf(tunLogPtr,"%s %s: ***looking for ping ip addrs vLastIpPinged= %d, ...count = %d***\n", ms_ctime_buf, phase2str(current_phase), vLastIpPinged, count);
+				count--;
+				vLastIpPinged++;
+				if (vLastIpPinged == MAX_NUM_IP_ATTACHED)
+				vLastIpPinged = 0;
+                	}
+			if (count)
+			{
+				highest_rtt_from_ping = fFindRttUsingPing(aDest_Dtn_IPs[vLastIpPinged].aDest_Ip2);
+				vLastIpPinged++;
+				if (vLastIpPinged == MAX_NUM_IP_ATTACHED)
+					vLastIpPinged = 0;
+			}
+			else
+				{
+					highest_rtt_from_ping = 0;	
+					if (vDebugLevel > 2) 
+						fprintf(tunLogPtr,"%s %s: ***highes rtt from ping is zero ..., count = %d, vLastPinged = %d***\n", 
+					ms_ctime_buf, phase2str(current_phase), count, vLastIpPinged);
+				}
+#endif
 		}
 
 		if (vDebugLevel > 2) 
@@ -4530,8 +4849,68 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 		}
 		else
 			{
+
+/**************/
+				int vDest_Dtn_IP_Found = 0;
+                		int FirstD_IP_Index_Not_Exist = 0;
+                		int IPD_Found_Index = 0;
+
+				for (int i = 0; i < MAX_NUM_IP_ATTACHED; i++)
+				{
+					if (aDest_Dtn_IPs[i].dest_ip_addr == peeraddr.sin_addr.s_addr)
+					{
+						gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+						vDest_Dtn_IP_Found = 1;
+						IPD_Found_Index = i;
+						aDest_Dtn_IPs[i].currently_exist = 1;
+						aDest_Dtn_IPs[i].last_time_ip = clk;
+						break;
+					}
+					else
+						if (aDest_Dtn_IPs[i].dest_ip_addr == 0)
+						{
+							if (!FirstD_IP_Index_Not_Exist)
+								FirstD_IP_Index_Not_Exist = (i+1); //should only get set once
+						}
+				}
+
+				gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+				if (!vDest_Dtn_IP_Found) //Ip does not exist
+				{
+					--FirstD_IP_Index_Not_Exist;
+					aDest_Dtn_IPs[FirstD_IP_Index_Not_Exist].dest_ip_addr = peeraddr.sin_addr.s_addr;
+					aDest_Dtn_IPs[FirstD_IP_Index_Not_Exist].currently_exist = 1;
+					aDest_Dtn_IPs[FirstD_IP_Index_Not_Exist].last_time_ip = clk;
+					currently_dest_networks++;
+					if (vDebugLevel > 4)
+						fprintf(tunLogPtr, "%s %s: ***dest traffic got set here***, current_dest_netwks = %d\n", 
+											ms_ctime_buf, phase2str(current_phase), currently_dest_networks);
+				}
+
+#if 1
+				if (vDebugLevel > 4)
+				{
+					gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+					if (vDest_Dtn_IP_Found) //Ip exist
+					{
+						fprintf(tunLogPtr, "%s %s: ***vDest_Dtn_IP_Found dest_ip_addr %u, IPD_Found_Index %d***\n",
+									ms_ctime_buf, phase2str(current_phase), peeraddr.sin_addr.s_addr, IPD_Found_Index);
+					}
+					else
+						{
+							fprintf(tunLogPtr, "%s %s: ***vDest_Dtn_IP_Found ****NOT FOUND***  dest_ip_addr %u, FirstD_IP_Index_Not_Exist %d***\n",
+									ms_ctime_buf, phase2str(current_phase), peeraddr.sin_addr.s_addr, FirstD_IP_Index_Not_Exist);
+						}
+				}
+#endif
+
+/*******************/
+
 				char *peeraddrpresn = inet_ntoa(peeraddr.sin_addr);
 				sprintf(aDest_Ip2_Binary,"%02X",peeraddr.sin_addr.s_addr);
+				if (!vDest_Dtn_IP_Found) //Ip connection did not exist
+					sprintf(aDest_Dtn_IPs[FirstD_IP_Index_Not_Exist].aDest_Ip2_Binary,"%02X",peeraddr.sin_addr.s_addr);
+
 				//total_time_passed = 0;
 				if (vDebugLevel > 1)
 				{
@@ -4544,6 +4923,15 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 
 				vIamASrcDtn = 1;	
 				strcpy(aDest_Ip2,peeraddrpresn);
+
+				if (!vDest_Dtn_IP_Found) //Ip connection did not exist
+				{
+					strcpy(aDest_Dtn_IPs[FirstD_IP_Index_Not_Exist].aDest_Ip2,peeraddrpresn);
+					aDest_Dtn_IPs[FirstD_IP_Index_Not_Exist].currently_exist = 1;
+				}
+				//if (currently_dest_networks == MAX_NUM_IP_ATTACHED)
+				//	currently_dest_networks = 0;
+				vJustGotConnected = 1; //try to ensure that we don't clean up DB too early
 			}
 
 		retval = getsockname(connfd, (struct sockaddr *) &localaddr, &localaddrlen);
@@ -4646,16 +5034,19 @@ void * fDoRunSendMessageToPeer(void * vargp)
 cli_again:
 	Pthread_mutex_lock(&dtn_mutex);
 	
-	while(cdone == 0)
-		Pthread_cond_wait(&dtn_cond, &dtn_mutex);
-	memcpy(&sMsg2,&sMsg,sizeof(sMsg2));
+	while(sMsgsIn == sMsgsOut)
+		Pthread_cond_wait(&full, &dtn_mutex);
+	
+	memcpy(&sMsg2,&sMsg[sMsgsOut],sizeof(sMsg2));
+	sMsgsOut = (sMsgsOut + 1) % SMSGS_BUFFER_SIZE;
 	cdone = 0;
+	Pthread_cond_signal(&empty);
 	Pthread_mutex_unlock(&dtn_mutex);
 
 	if (vDebugLevel > 1)
 	{
 		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-		fprintf(tunLogPtr,"%s %s: ***Sending message %d to source DTN...***\n", ms_ctime_buf, phase2str(current_phase), sleep_count);
+		fprintf(tunLogPtr,"%s %s: ***Sending message %d to source DTN...***\n", ms_ctime_buf, phase2str(current_phase), ntohl(sMsg2.seq_no));
 		fflush(tunLogPtr);
 	}
 
@@ -4679,7 +5070,9 @@ cli_again:
 	{
 		goto cli_again;
 	}
+	
 	str_cli_nohpn(sockfd, &sMsg2);         /* do it all */
+
 	check = shutdown(sockfd, SHUT_WR);
 //	close(sockfd); - use shutdown instead of close
 	if (!check)
@@ -4687,7 +5080,6 @@ cli_again:
 	else
 		printf("shutdown failed, check = %d\n",check);
 
-	sleep_count++;
 	goto cli_again;
 
 return ((char *)0);
@@ -4837,6 +5229,8 @@ int main(int argc, char **argv)
 	memset(aDest_Ip2,0,sizeof(aDest_Ip2));
 	memset(aDest_Ip2_Binary,0,sizeof(aDest_Ip2_Binary));
 	memset(aLocal_Ip,0,sizeof(aLocal_Ip));
+	memset(aSrc_Dtn_IPs, 0, sizeof (aSrc_Dtn_IPs));
+	memset(aDest_Dtn_IPs, 0, sizeof (aDest_Dtn_IPs));
 	src_ip_addr.y = 0;
 #ifdef INCLUDE_SRC_PORT
 	src_port = 0;
