@@ -12,6 +12,8 @@ testing/xdp_loader
 testing/xdp_loader_light
 cli/facil_io_7.0/
 cli/tmp/
+packaging/SATuning_Module.zip
+packaging/ASSESSdtntune.zip
 testing/modules/tuningMod/.Module.symvers.cmd
 testing/modules/tuningMod/.modules.order.cmd
 testing/modules/tuningMod/.tuningModule.ko.cmd
