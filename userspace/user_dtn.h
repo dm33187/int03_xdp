@@ -35,6 +35,7 @@ extern int gSource_Dtn_Port;
 extern int gSource_HpnsshQfactor_Port;
 extern char gTuningMode;
 extern char gUseApacheKafka;
+extern char *gKafkaTopic;
 extern char netDevice[];
 extern char *gNic_to_use;
 extern int netDeviceSpeed;
