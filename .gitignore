@@ -28,3 +28,4 @@ userspace/myclient
 userspace/mybinncli
 userspace/kafka/kaf_consumer
 userspace/kafka/kaf_producer
+out/
