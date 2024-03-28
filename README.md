@@ -83,7 +83,7 @@ There are a few relevant directories here:
 - gcc-multilib
 - bpftool v6.7.0
 - bpftrace
-- librdkafka and libglib2.0-dev (used with Apache Kafka framework)
+- librdkafka-dev and libglib2.0-dev (used with Apache Kafka framework)
 - pkg-config
 - numactl, sysstat
 
