@@ -1,3 +1,4 @@
+#set -x
 echo " "
 echo "Creating Tuning Module Assessment package..."
 cp ../assess-tuning/dtn_tune .
@@ -28,7 +29,7 @@ echo "Finished Creating Tuning Module Assessment package..."
 
 echo " "
 echo "Creating Tuning Module StandAlone package..."
-cp ../cli/tmp/tuncli .
+cp ../cli/tmp/tunclibin tuncli
 cp ../userspace/user_dtn .
 cp ../userspace/userdtn_adm .
 cp ../userspace/common_irq_affinity.sh .
@@ -39,13 +40,14 @@ cp ../userspace/user_menu.sh .
 cp ../userspace/gdv_100.sh .
 cp ../userspace/gdv.sh .
 cp ../userspace/readme.txt .
+cp ../userspace/kafka/config.ini .
 cp ../util/plotgraph.py .
 cp ../util/conv_csv_to_json.py .
 cp obj/int-sink2+filter.bpf.o .
 cp obj/bpf_iter_tcp4.bpf.o .
 
 rm -f SATuning_Module.zip
-zip SATuning_Module.zip tuncli user_dtn userdtn_adm help_dtn.sh user_config.txt user_menu.sh gdv_100.sh gdv.sh readme.txt common_irq_affinity.sh set_irq_affinity.sh plotgraph.py conv_csv_to_json.py install.sh tuning_module.service int-sink2+filter.bpf.o bpf_iter_tcp4.bpf.o
+zip SATuning_Module.zip tuncli user_dtn userdtn_adm help_dtn.sh user_config.txt user_menu.sh gdv_100.sh gdv.sh readme.txt common_irq_affinity.sh set_irq_affinity.sh plotgraph.py conv_csv_to_json.py install.sh tuning_module.service int-sink2+filter.bpf.o bpf_iter_tcp4.bpf.o config.ini
 #
 rm tuncli 
 rm user_dtn 
@@ -62,5 +64,6 @@ rm plotgraph.py
 rm conv_csv_to_json.py 
 rm int-sink2+filter.bpf.o
 rm bpf_iter_tcp4.bpf.o
+rm config.ini
 echo "Finished Creating Tuning Module StandAlone package..."
 

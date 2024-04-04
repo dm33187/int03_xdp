@@ -25,7 +25,7 @@ The file you are currently reading.
 user_config.txt 
 ===============
 In the user_config.txt, the operator can use certain well known values to 
-control how the Tuning Module operates.  So far, there are 10 parameters 
+control how the Tuning Module operates.  So far, there are 13 parameters 
 that can be used.  The following is an explanation for each one: 
 
 a. evaluation timer  
@@ -88,6 +88,11 @@ The bpf program will attach to  network interface using this type
 l. source_hpnssh_qfactor_port
 The port that a hpnssh client will attach to retrieve metadata information 
 about the traffic flow.
+
+m. use_apache_kafka
+Causes the Tuning Module to use the Apache Kafka streaming platform to 
+consume certain messages. Requires a "config.ini" file to run. See example
+in directory where package was installed.
 
 gdv.sh 
 ======

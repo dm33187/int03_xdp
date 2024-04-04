@@ -6,7 +6,7 @@ static void on_response(http_s *h);
 static char * Usage = "This is an HTTP client to talk to Tuning Module. \
 		       \nUse \"tuncli -t\" to apply tunings that were recommended during assessment phase. \
 		       \nUse \"tuncli -l on\" to turn learning mode on (default). \
-		       \nUse \"tuncli -l off\" to turn learning mode off. \
+		       \nUse \"tuncli -l off\" to turn learning mode off (tuning mode). \
 		       \nUse \"tuncli -pc\" to provide counters of activities performed per flow. \
 		       \nUse \"tuncli -b rx [value]\" to change RX ring buffer size of the NIC. \
 		       \nUse \"tuncli -b tx [value]\" to change TX ring buffer size of the NIC. \

@@ -29,3 +29,5 @@ userspace/user_dtn
 userspace/myclient
 userspace/mybinncli
 userspace/sim_server
+userspace/kafka/kaf_consumer
+userspace/kafka/kaf_producer

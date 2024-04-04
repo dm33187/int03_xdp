@@ -71,13 +71,16 @@ There are a few relevant directories here:
 -	Contains source for a HTTP client that is used as a CLI for sending instructions to
 	or receiving information from the Tuning Module
 
-**To Compile and Build, the following packages should be installed:**
+**To Compile and Build, the following packages and libraries should be installed:**
 
 - clang
 - bpftool v5.12.0+
 - bpftrace
 - GNU make
 - git
+- binn 
+- librdkafka and glib (used with Apache Kafka framework)
+- pkg-config
 
 In order to compile and work with the Tuning Module, do the following:
 -	Initialize the git submodule ```libbpf```
