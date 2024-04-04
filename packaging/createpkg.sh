@@ -44,7 +44,7 @@ cp ../userspace/kafka/config.ini .
 cp ../util/plotgraph.py .
 cp ../util/conv_csv_to_json.py .
 cp obj/int-sink2+filter.bpf.o .
-cp obj/bpf_iter_tcp4.bpf.o .
+cp ../iter/bpf_iter_tcp4.bpf.o .
 
 rm -f SATuning_Module.zip
 zip SATuning_Module.zip tuncli user_dtn userdtn_adm help_dtn.sh user_config.txt user_menu.sh gdv_100.sh gdv.sh readme.txt common_irq_affinity.sh set_irq_affinity.sh plotgraph.py conv_csv_to_json.py install.sh tuning_module.service int-sink2+filter.bpf.o bpf_iter_tcp4.bpf.o config.ini
