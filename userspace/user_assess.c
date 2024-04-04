@@ -55,6 +55,7 @@ int gMaxnum_tuning_logs = 10; //default
 char *gNic_to_use = 0;
 char *gNic_attach_type = 0;
 char gUseApacheKafka = 0;
+char *gKafkaTopic = 0;
 
 enum workflow_phases current_phase = STARTING;
 
@@ -73,12 +74,14 @@ const char *phase2str(enum workflow_phases phase)
 }
 
 /* Must change NUMUSERVALUES below if adding more values */
-#define NUMUSERVALUES	13
+#define NUMUSERVALUES	14
 #define USERVALUEMAXLENGTH	256
+#define CFG_VALUE_SIZE	32
+#define DEFAULT_VALUE_SIZE	32
 typedef struct {
 	char aUserValues[USERVALUEMAXLENGTH];
-	char default_val[32];
-	char cfg_value[32];
+	char default_val[DEFAULT_VALUE_SIZE];
+	char cfg_value[CFG_VALUE_SIZE];
 } sUserValues_t[NUMUSERVALUES];
 
 sUserValues_t userValues = {{"evaluation_timer", "500000", "-1"},
@@ -93,7 +96,8 @@ sUserValues_t userValues = {{"evaluation_timer", "500000", "-1"},
 			{"nic_to_use","na","-1"},
 			{"nic_attach_type","xdpoffload","-1"},
 			{"source_hpnssh_qfactor_port","5525","-1"},
-			{"use_apache_kafka","n","-1"}
+			{"use_apache_kafka","n","-1"},
+			{"apache_kafka_topic","none","-1"}
 			};
 
 void fCheck_log_limit(void)
@@ -215,7 +219,15 @@ void fDoGetUserCfgValues(void)
 					}
 				}
 				
-				strcpy(userValues[count].cfg_value, setting);
+				if (strcmp(key,"apache_kafka_topic") == 0) //the value could be a hyphen
+				{
+					while (!isspace((int)p[ind])) 
+					{
+						setting[y++] = p[ind++];
+					}
+				}
+				
+				strncpy(userValues[count].cfg_value, setting, CFG_VALUE_SIZE-1);
 				
 				break;
 			}
@@ -336,6 +348,14 @@ void fDoGetUserCfgValues(void)
 															if (userValues[count].cfg_value[0] == 'y') 
 																gUseApacheKafka = 1;
 														}
+														else 
+															if (strcmp(userValues[count].aUserValues,"apache_kafka_topic") == 0)
+															{
+																if (strcmp(userValues[count].cfg_value, "-1") == 0) //no value in text file 
+																	gKafkaTopic  = userValues[count].default_val;
+																else
+																	gKafkaTopic = userValues[count].cfg_value;
+															}
 	}
 
 	gettime(&clk, ctime_buf);

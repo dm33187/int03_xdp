@@ -100,6 +100,7 @@ copy_files()
 	mv set_irq_affinity.sh $pathname
 	mv help_dtn.sh $pathname
 	mv user_config.txt $pathname
+	mv config.ini $pathname
 	mv user_menu.sh $pathname
 	mv gdv_100.sh $pathname
 	mv gdv.sh $pathname
@@ -168,6 +169,12 @@ logcount=
 				echo "Saving ${pathname}/user_config.txt ${pathname}/user_config.txt.$$"
 				cp ${pathname}/user_config.txt ${pathname}/user_config.txt.$$
 			fi
+			if [ -f ${pathname}/config.ini ]	#save off config just in case
+			then
+				echo "Saving ${pathname}/config.ini ${pathname}/config.ini.$$"
+				cp ${pathname}/config.ini ${pathname}/config.ini.$$
+			fi
+
 			finish_up
 		fi
 

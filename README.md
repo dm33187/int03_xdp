@@ -71,35 +71,41 @@ There are a few relevant directories here:
 -	Contains source for a HTTP client that is used as a CLI for sending instructions to
 	or receiving information from the Tuning Module
 
+```iter```
+-	Contains source for a bpf object file that is used for observing number of retransmissions
+	associated with a file transfer
+
 **To Compile and Build, the following packages and libraries should be installed:**
 
-- clang
-- bpftool v5.12.0+
-- bpftrace
-- GNU make
 - git
-- binn 
-- librdkafka and glib (used with Apache Kafka framework)
+- GNU make
+- clang
+- gcc-multilib
+- bpftool v6.7.0
+- bpftrace
+- librdkafka and libglib2.0-dev (used with Apache Kafka framework)
 - pkg-config
+- numactl, sysstat
 
 In order to compile and work with the Tuning Module, do the following:
 -	Initialize the git submodule ```libbpf```
 	* The libbpf source is provided thru the git submodule. 
 	* ```libbpf``` is a library that allows the bpf programs to run.
-	* To use the module it must be initialized by running the following commands in the Tuning Module
-	root directory:
-		*	```git submodule init```
-		*	```git submodule update```
+	* To use the module it must be initialized by running the following command in the Tuning Module's root directory:
+```bash
+git submodule update --init
+```
 
 -	Run ```sudo apt update```
 -	Run ```sudo apt install pkg-config```
 -	Run ```make``` in ```userspace/``` to create Tuning Module's binaries
 -	Run ```make``` in ```cli/``` to create a directory call ```tmp``` which contains the binary ```tuncli```
+-	Run ```sudo make -f Makefile.iter``` in Tuning Module's root directory to create ```iter``` object file
 
 **Make a zip package to install Tuning Module:**
 -	go to ```packaging``` directory
 -	type ```sh ./createpkg.sh``` to create two zip files, one of which is called ```SATuning_Module.zip```. 
--	```SATuning_Module.zip``` consist of files from the ```userspace``` and ```cli``` directory
+-	```SATuning_Module.zip``` consist of files from the ```userspace```, ```cli``` and ```iter``` directory
 -	create a temp directory, copy the ```SATuning_Module.zip``` file into it,  cd to it and type ```unzip *.zip```
 -	after unziping, to install, type ```sudo sh ./install.sh```
 -	follow the instructions to install the package 
@@ -112,13 +118,15 @@ In order to compile and work with the Tuning Module, do the following:
 	* Retransmission rate
 	* Queue Occupancy Threshold
 	* Has a Learning mode and a Tuning mode
--	When set to Tuning mode, will dynmically set the the suggested tuning changes without manual intervention
+-	When set to Tuning mode, will dynamically set the suggested tuning changes without manual intervention
 	* Learning mode will only make suggestions which can be found in the log
-	* Any changes to the system are automaticallly logged.
--	Uses "ethtool" to manipulate buffer rings of a network device in order to get petter performance
--	If Queue Occupancy on one node gets above some threshold and the retransmission rate on the other node gets too high
-	the Tuning Module will lower the pacing (if in Tuning mode) or suggest some value to lower it too. It will then put 
-	back the pacing to its original state after the transfer is over.
--	Monitors RTT use bpf trace tools and also with the use of "ping".
+	* Any changes to the system are automatically logged.
+-	Uses "ethtool" to manipulate buffer rings of a network device in order to get better performance
+-	If Queue Occupancy on one node gets above some threshold and the retransmission rate on the other node gets too high,
+	the Tuning Module will lower the pacing (if in Tuning mode) or suggest some value to lower it to. In addition, it may
+	also use the Hop Latency as a factor in deciding how to adjust the pacing if so desired. It will constantly adjust
+	the pacing during the life of the transfer. The pacing will be set back to its original state after the transfer 
+	is over.
+-	Monitors RTT using bpf trace tools and also with the use of "ping".
 -	Added the ability for clients (hpnssh, etc.) to connect to the Tuning Module in order to receive data
 	for monitoring purposes.

@@ -2509,7 +2509,7 @@ double fCheckAppBandwidth(char app[], char aDest[], __u32 dest_ip_addr, int inde
 	unsigned long vBandWidthInBits = 0;
 	double vBandWidthInGBits = 0;
 
-	sprintf(try,"bpftrace -e \'BEGIN { zero(@size); zero(@sum); @sck; @sck_common; @daddr; } kprobe:tcp_sendmsg /comm == \"%s\"/ { @size = arg2; @sck = (struct sock *) arg0; @sck_common = (struct sock_common) @sck->__sk_common; @daddr = (@sck_common.skc_daddr); } kretprobe:tcp_sendmsg /comm == \"%s\" && @daddr == %u/ { @sum = @sum + @size; } interval:ms:1002 { exit(); } END { printf(\"%s\", @sum); clear(@size); clear(@sum); clear(@daddr); clear(@sck); clear(@sck_common); }\'",app,app,dest_ip_addr,"%lu");
+	sprintf(try,"bpftrace --include net/sock.h -e \'BEGIN { zero(@size); zero(@sum); @sck; @sck_common; @daddr; } kprobe:tcp_sendmsg /comm == \"%s\"/ { @size = arg2; @sck = (struct sock *) arg0; @sck_common = (struct sock_common) @sck->__sk_common; @daddr = (@sck_common.skc_daddr); } kretprobe:tcp_sendmsg /comm == \"%s\" && @daddr == %u/ { @sum = @sum + @size; } interval:ms:1002 { exit(); } END { printf(\"%s\", @sum); clear(@size); clear(@sum); clear(@daddr); clear(@sck); clear(@sck_common); }\'",app,app,dest_ip_addr,"%lu");
 
 	pipe = popen(try,"r");
 	if (!pipe)
@@ -3287,7 +3287,7 @@ void fGetTxBitRate()
 	char try[1024];
 	int stage = 0;
 
-	sprintf(try,"bpftrace -e \'BEGIN { @name;} kprobe:dev_get_stats { $nd = (struct net_device *) arg0; @name = $nd->name; } kretprobe:dev_get_stats /@name == \"%s\"/ { $rtnl = (struct rtnl_link_stats64 *) retval; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); } interval:s:1 { exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu");
+	sprintf(try,"bpftrace --include linux/netdevice.h -e \'BEGIN { @name;} kprobe:dev_get_stats { $nd = (struct net_device *) arg0; @name = $nd->name; } kretprobe:dev_get_stats /@name == \"%s\"/ { $rtnl = (struct rtnl_link_stats64 *) retval; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); } interval:s:1 { exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu");
 
 start:
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
@@ -3480,7 +3480,7 @@ void * fDoRunGetThresholds(void * vargp)
 
 	sprintf(aNicSetting,"tc qdisc del dev %s root fq 2>/dev/null", netDevice);
 
-	sprintf(try,"bpftrace -e \'BEGIN { @name;} kprobe:dev_get_stats { $nd = (struct net_device *) arg0; @name = $nd->name; } kretprobe:dev_get_stats /@name == \"%s\"/ { $rtnl = (struct rtnl_link_stats64 *) retval; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); } interval:s:1 { exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu");
+	sprintf(try,"bpftrace --include linux/netdevice.h -e \'BEGIN { @name;} kprobe:dev_get_stats { $nd = (struct net_device *) arg0; @name = $nd->name; } kretprobe:dev_get_stats /@name == \"%s\"/ { $rtnl = (struct rtnl_link_stats64 *) retval; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); } interval:s:1 { exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu");
 	/* fix for kfunc below too */
 	/*sprintf(try,"bpftrace -e \'BEGIN { @name;} kfunc:dev_get_stats { $nd = (struct net_device *) args->dev; @name = $nd->name; } kretfunc:dev_get_stats /@name == \"%s\"/ { $nd = (struct net_device *) args->dev; $rtnl = (struct rtnl_link_stats64 *) args->storage; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); time(\"%s\"); exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu","%S");*/
 
@@ -5534,7 +5534,7 @@ readn2_again:
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
         if (!y) //cpnnection dropped on client side
         {
-                if (vDebugLevel > 0)
+                if (vDebugLevel > 4)
                 {
 			fprintf(tunLogPtr,"%s %s: ***INFO***: client closed connection, returning from readn2, errno = %d\n", 
 											ms_ctime_buf, phase2str(current_phase), saveerrno);
@@ -5717,7 +5717,7 @@ process_request(int sockfd)
 	{
 		if ( (n = Readn(sockfd, &from_cli, sizeof(from_cli))) == 0)
 		{
-			if (vDebugLevel > 0)
+			if (vDebugLevel > 3)
 			{
 				fprintf(tunLogPtr,"\n%s %s: ***returning from QINFO OR START process request***\n", ms_ctime_buf, phase2str(current_phase));
 				fflush(tunLogPtr);
@@ -6085,7 +6085,7 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 
 			Close(listenfd); /* close listening socket */
 			process_request(connfd);/* process the request */
-			if (vDebugLevel > 0)
+			if (vDebugLevel > 4)
 			{
 				fprintf(tunLogPtr,"%s %s: ***Explicit close:\n", ms_ctime_buf, phase2str(current_phase));
 				fflush(tunLogPtr);
@@ -6358,7 +6358,8 @@ void * fDoRunKafkaConsume(void * vargp)
 	conf = NULL;
 
 	// Convert the list of topics to a format suitable for librdkafka.
-	const char *topic = "poems_1";
+	//const char *topic = "poems_1";
+	const char *topic = gKafkaTopic;
 	rd_kafka_topic_partition_list_t *subscription = rd_kafka_topic_partition_list_new(1);
 	rd_kafka_topic_partition_list_add(subscription, topic, RD_KAFKA_PARTITION_UA);
 
@@ -6403,6 +6404,14 @@ void * fDoRunKafkaConsume(void * vargp)
 			else 
 				{
 					g_message("Consumer error: %s", rd_kafka_message_errstr(consumer_message));
+#if 1
+					// I think we should close consumer before returning.
+					g_message( "Closing consumer");
+					rd_kafka_consumer_close(consumer);
+
+					// Destroy the consumer.
+					rd_kafka_destroy(consumer);
+#endif
 					return ((char *)1);
 				}
 		} 
@@ -6440,7 +6449,7 @@ void * fDoRunKafkaConsume(void * vargp)
 	rd_kafka_destroy(consumer);
 
 	while (1) 
-		sleep (5); //wait for exit
+		sleep (2); //wait for exit
 
 return ((char *) 0);
 }
