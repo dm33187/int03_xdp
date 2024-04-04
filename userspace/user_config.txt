@@ -10,3 +10,4 @@ source_dtn_port			5524
 source_hpnssh_qfactor_port	5525
 nic_to_use			no-default
 nic_attach_type			xdpoffload
+use_apache_kafka		n

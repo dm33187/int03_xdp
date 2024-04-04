@@ -54,6 +54,7 @@ char gMakeTuningPermanent = 'n';
 int gMaxnum_tuning_logs = 10; //default
 char *gNic_to_use = 0;
 char *gNic_attach_type = 0;
+char gUseApacheKafka = 0;
 
 enum workflow_phases current_phase = STARTING;
 
@@ -72,7 +73,7 @@ const char *phase2str(enum workflow_phases phase)
 }
 
 /* Must change NUMUSERVALUES below if adding more values */
-#define NUMUSERVALUES	12
+#define NUMUSERVALUES	13
 #define USERVALUEMAXLENGTH	256
 typedef struct {
 	char aUserValues[USERVALUEMAXLENGTH];
@@ -91,7 +92,8 @@ sUserValues_t userValues = {{"evaluation_timer", "500000", "-1"},
 			{"source_dtn_port","5524","-1"},
 			{"nic_to_use","na","-1"},
 			{"nic_attach_type","xdpoffload","-1"},
-			{"source_hpnssh_qfactor_port","5525","-1"}
+			{"source_hpnssh_qfactor_port","5525","-1"},
+			{"use_apache_kafka","n","-1"}
 			};
 
 void fCheck_log_limit(void)
@@ -328,6 +330,12 @@ void fDoGetUserCfgValues(void)
 														else
 															gSource_HpnsshQfactor_Port = cfg_val;
 													}
+													else 
+														if (strcmp(userValues[count].aUserValues,"use_apache_kafka") == 0)
+														{
+															if (userValues[count].cfg_value[0] == 'y') 
+																gUseApacheKafka = 1;
+														}
 	}
 
 	gettime(&clk, ctime_buf);
