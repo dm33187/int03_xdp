@@ -26,7 +26,7 @@
 #include "unp.h"
 #include "user_dtn.h"
 
-#define SMSGS_BUFFER_SIZE 10
+#define SMSGS_BUFFER_SIZE 20
 int sMsgsIn = 0;
 int sMsgsOut = 0;
 unsigned int vHouseKeepingTime = 10000000; //10 million usecs = 10 secs
@@ -180,8 +180,10 @@ static int perf_buffer_poll_start = 0;
 //static time_t total_time_passed = 0;
 //static double vRetransmissionRate = 0.0;
 static double vGlobal_average_tx_Gbits_per_sec = 0.0;
+static double vGlobal_average_rx_Gbits_per_sec = 0.0;
 static double vMaxPacingRate = 0.9; //90%
 int vResetPacingBack = 0;
+int vSentPacingOver = 0;
 static int new_traffic = 0;
 static int rx_traffic = 0;
 static time_t now_time = 0;
@@ -191,6 +193,7 @@ static int vIamADestDtn = 0;
 static double rtt_threshold = 2.0;
 static int rtt_factor = 4;
 void fStartEvaluationTimer(__u32);
+void fGetTxBitRate(void);
 time_t calculate_delta_for_csv(void);
 time_t calculate_delta_for_csv(void)
 {
@@ -242,6 +245,7 @@ typedef struct TimerData {
 	union uIP src_ip_addr;
 	union uIP dst_ip_addr;
 	__u32 vQinfo;
+	__u32 vHopDelay;
 } sTimerData_t;
 sTimerData_t sqOCC_TimerID_Data;
 
@@ -455,6 +459,7 @@ typedef struct {
 typedef struct {
 #define MAX_NUM_PORTS_ON_THIS_IP 20
 	__u32 src_ip_addr;
+	char aSrc_Ip2[32];
 	time_t last_time_ip;
         sSrc_Dtn_Ports_t aSrc_port[MAX_NUM_PORTS_ON_THIS_IP];
 	__u16 rsvd;
@@ -567,7 +572,10 @@ void print_hop_key(struct hop_key *key);
 void record_activity(char * pActivity); 
 
 #define SIGALRM_MSG "SIGALRM received.\n"
-int vq_h_TimerIsSet = 0;
+//Just use the vq_TimerIsSet since it al relares to pacing
+//int vq_h_TimerIsSet = 0; 
+
+static int vUseRetransmissionRate = 0; //This will cause us to trigger on queue occupancy alone (if true), if this is what we want
 int vq_TimerIsSet = 0;
 static int vTwiceInaRow = 0;
 
@@ -590,8 +598,8 @@ void tHouseKeeping_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
 				if ((clk - aSrc_Dtn_IPs[i].last_time_ip) >= vHouseTime) //probabaly not doing transfers anymore
 				{
 					if (vDebugLevel > 2)
-						fprintf(tunLogPtr, "%s %s: ***Housekeeping Timer removing attached IP address %u from DB, current_source_networks = %d***\n",
-											ms_ctime_buf, phase2str(current_phase), aSrc_Dtn_IPs[i].src_ip_addr, currently_attached_networks); 
+						fprintf(tunLogPtr, "%s %s: ***Housekeeping Timer removing attached IP address %s (%u) from DB, current_source_networks = %d***\n",
+											ms_ctime_buf, phase2str(current_phase), aSrc_Dtn_IPs[i].aSrc_Ip2, aSrc_Dtn_IPs[i].src_ip_addr, currently_attached_networks); 
 					memset(&aSrc_Dtn_IPs[i],0,sizeof(sSrc_Dtn_IPs_t));
 					currently_attached_networks--;
 				}
@@ -612,8 +620,8 @@ void tHouseKeeping_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
 				if ((clk - aDest_Dtn_IPs[i].last_time_ip) >= vHouseTime) //probabaly not doing transfers anymore
 				{
 					if (vDebugLevel > 2)
-						fprintf(tunLogPtr, "%s %s: ***Housekeeping Timer removing attached IP address %u from DB, current_dest_networks = %d***\n",
-											ms_ctime_buf, phase2str(current_phase), aDest_Dtn_IPs[i].dest_ip_addr, currently_dest_networks); 
+						fprintf(tunLogPtr, "%s %s: ***Housekeeping Timer removing attached IP address %s (%u) from DB, current_dest_networks = %d***\n",
+											ms_ctime_buf, phase2str(current_phase), aDest_Dtn_IPs[i].aDest_Ip2, aDest_Dtn_IPs[i].dest_ip_addr, currently_dest_networks); 
 					memset(&aDest_Dtn_IPs[i],0,sizeof(sDest_Dtn_IPs_t));
 					currently_dest_networks--;
 				}
@@ -661,14 +669,90 @@ void qOCC_Hop_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
 	char activity[MAX_SIZE_TUNING_STRING];
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-	fprintf(tunLogPtr, "%s %s: ***Timer Alarm went off*** still having problems with Queue Occupancy and HopDelays. Time to do something***\n",ms_ctime_buf, phase2str(current_phase)); 
+	if (vDebugLevel > 5)
+		fprintf(tunLogPtr, "%s %s: ***Timer Alarm went off*** still having problems with Queue Occupancy and HopDelays. Will check if we should trigger source***\n",ms_ctime_buf, phase2str(current_phase)); 
 	//***Do something here ***//
-	vq_h_TimerIsSet = 0;
+	//vq_h_TimerIsSet = 0;
+	vq_TimerIsSet = 0;
 	sprintf(activity,"%s %s: ***hop_key.hop_index %X, Doing Something",ctime_buf, phase2str(current_phase), curr_hop_key_hop_index);
 	record_activity(activity); //make sure activity big enough to concatenate additional data -- see record_activity()
 	fflush(tunLogPtr);
+	if (vCanStartEvaluationTimer)
+	{
+		Pthread_mutex_lock(&dtn_mutex);
+
+		while (((sMsgsIn + 1) % SMSGS_BUFFER_SIZE) == sMsgsOut)
+			pthread_cond_wait(&empty, &dtn_mutex);
+
+		strcpy(sMsg[sMsgsIn].msg, "Hello there!!! This is a Qinfo with HopD msg...\n");
+		sMsg[sMsgsIn].msg_no = htonl(QINFO_MSG);
+		//sMsg[sMsgsIn].value = htonl(vQinfoUserValue);
+		sMsg[sMsgsIn].value = htonl(sqOCC_TimerID_Data.vQinfo);
+		sMsg[sMsgsIn].vHopDelay = htonl(sqOCC_TimerID_Data.vHopDelay);
+		sMsg[sMsgsIn].src_ip_addr.y = sqOCC_TimerID_Data.src_ip_addr.y;
+		sMsg[sMsgsIn].dst_ip_addr.y = sqOCC_TimerID_Data.dst_ip_addr.y;
+		sMsgSeqNo++;
+		sMsg[sMsgsIn].seq_no = htonl(sMsgSeqNo);
+		cdone = 1;
+		sMsgsIn = (sMsgsIn + 1) % SMSGS_BUFFER_SIZE;
+		Pthread_cond_signal(&full);
+		Pthread_mutex_unlock(&dtn_mutex);
+
+		// Start and wait for (evaluation timer * 10) before trying to trigger source again
+		fStartEvaluationTimer(curr_hop_key_hop_index);
+	}
 	
 	return;
+}
+
+void SendResetCleanUpPacingMsg()
+{
+	Pthread_mutex_lock(&dtn_mutex);
+
+	while (((sMsgsIn + 1) % SMSGS_BUFFER_SIZE) == sMsgsOut)
+		pthread_cond_wait(&empty, &dtn_mutex);
+
+	strcpy(sMsg[sMsgsIn].msg, "Hello there!!! This is a Reset CleanUp Pacing msg...\n");
+	sMsg[sMsgsIn].msg_no = htonl(CLEANUP_RESET_PACING_MSG);
+	sMsg[sMsgsIn].value = 0;
+	sMsg[sMsgsIn].vHopDelay = 0;
+	sMsg[sMsgsIn].src_ip_addr.y = src_ip_addr.y;
+	sMsg[sMsgsIn].dst_ip_addr.y = 0;
+	sMsgSeqNo++;
+	sMsg[sMsgsIn].seq_no = htonl(sMsgSeqNo);
+	cdone = 1;
+	sMsgsIn = (sMsgsIn + 1) % SMSGS_BUFFER_SIZE;
+	Pthread_cond_signal(&full);
+	Pthread_mutex_unlock(&dtn_mutex);
+	
+	// Start and wait for (evaluation timer * 10) before trying to trigger source again
+	//fStartEvaluationTimer(curr_hop_key_hop_index);
+return;
+}
+
+void SendResetPacingMsg(struct hop_key * pHop_key)
+{
+	Pthread_mutex_lock(&dtn_mutex);
+
+	while (((sMsgsIn + 1) % SMSGS_BUFFER_SIZE) == sMsgsOut)
+		pthread_cond_wait(&empty, &dtn_mutex);
+
+	strcpy(sMsg[sMsgsIn].msg, "Hello there!!! This is a Reset Pacing msg...\n");
+	sMsg[sMsgsIn].msg_no = htonl(RESET_PACING_MSG);
+	sMsg[sMsgsIn].value = 0;
+	sMsg[sMsgsIn].vHopDelay = 0;
+	sMsg[sMsgsIn].src_ip_addr.y = ntohl(pHop_key->flow_key.src_ip);
+	sMsg[sMsgsIn].dst_ip_addr.y = ntohl(pHop_key->flow_key.dst_ip);;
+	sMsgSeqNo++;
+	sMsg[sMsgsIn].seq_no = htonl(sMsgSeqNo);
+	cdone = 1;
+	sMsgsIn = (sMsgsIn + 1) % SMSGS_BUFFER_SIZE;
+	Pthread_cond_signal(&full);
+	Pthread_mutex_unlock(&dtn_mutex);
+	
+	// Start and wait for (evaluation timer * 10) before trying to trigger source again
+	//fStartEvaluationTimer(curr_hop_key_hop_index);
+return;
 }
 
 void qOCC_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
@@ -687,23 +771,6 @@ void qOCC_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
 	record_activity(activity); //make sure activity big enough to concatenate additional data -- see record_activity()
 	fflush(tunLogPtr);
 
-#if 0
-	if (vCanStartEvaluationTimer)
-	{
-		Pthread_mutex_lock(&dtn_mutex);
-		strcpy(sMsg[in].msg, "Hello there!!! This is a Qinfo msg...\n");
-		sMsg.msg_no = htonl(QINFO_MSG);
-		sMsg.value = htonl(vQinfoUserValue);
-		sMsgSeqNo++;
-		sMsg.seq_no = htonl(sMsgSeqNo);
-		cdone = 1;
-		Pthread_cond_signal(&dtn_cond);
-		Pthread_mutex_unlock(&dtn_mutex);
-
-		// Start and wait for (evaluation timer * 10) before trying to trigger source again
-		fStartEvaluationTimer(curr_hop_key_hop_index);
-	}
-#else
 	if (vCanStartEvaluationTimer)
 	{
 		Pthread_mutex_lock(&dtn_mutex);
@@ -727,8 +794,7 @@ void qOCC_TimerID_Handler(int signum, siginfo_t *info, void *ptr)
 		// Start and wait for (evaluation timer * 10) before trying to trigger source again
 		fStartEvaluationTimer(curr_hop_key_hop_index);
 	}
-#endif
-	return;
+return;
 }
 
 #define SECS_TO_WAIT_FLOW_MESSAGE 10
@@ -857,7 +923,7 @@ perf_event_loop: {
 		qinfo_max_value = 0;
 
 		//err = perf_buffer__poll(pb, 500);
-		err = perf_buffer__poll(pb, 250);
+		err = perf_buffer__poll(pb, 250); 
 	
 		if (err >= 0)
 		{
@@ -1039,8 +1105,10 @@ perf_event_loop: {
 						}
 			}
 		}
+		else
+			fprintf(tunLogPtr,"%s %s: *****WARNING***** err from perf event loop is  %d..\n", ms_ctime_buf, phase2str(current_phase), -err);
 	}
-	while(err >= 0);
+	while((err >= 0) || (err == -4));
 	fprintf(tunLogPtr,"%s %s: Exited perf event loop with err %d..\n", ms_ctime_buf, phase2str(current_phase), -err);
 	}
 close_maps: {
@@ -1074,7 +1142,8 @@ void fStartEvaluationTimer(__u32 hop_key_hop_index)
 	if (!vRetTimer)
 	{
 		vCanStartEvaluationTimer = 0;
-		if (vDebugLevel > 4)
+		vSentPacingOver = 1;
+		if (vDebugLevel > 6)
 		{
 			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 			fprintf(tunLogPtr,"%s %s: ***INFO !!! INFO !!! Timer set to %u microseconds for Evaluation***\n",ms_ctime_buf, phase2str(current_phase), gInterval*10); 
@@ -1086,13 +1155,33 @@ void fStartEvaluationTimer(__u32 hop_key_hop_index)
 return;
 }
 
-void EvaluateQOcc_and_HopDelay(__u32 hop_key_hop_index)
+void EvaluateQOcc_and_HopDelay(struct hop_key * pHop_key, __u32 vQinfo, __u32 vHopDelay)
 {
 	time_t clk;
 	char ctime_buf[27];
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
 	int vRetTimer;
 
+	if (!vq_TimerIsSet)
+	{
+		vRetTimer = timer_settime(qOCC_Hop_TimerID, 0, &sStartTimer, (struct itimerspec *)NULL);
+		if (!vRetTimer)
+		{
+			vq_TimerIsSet = 1;
+			curr_hop_key_hop_index = pHop_key->hop_index;
+			sqOCC_TimerID_Data.src_ip_addr.y = ntohl(pHop_key->flow_key.src_ip);
+			sqOCC_TimerID_Data.dst_ip_addr.y = ntohl(pHop_key->flow_key.dst_ip);
+			sqOCC_TimerID_Data.vQinfo = vQinfo;
+			sqOCC_TimerID_Data.vHopDelay = vHopDelay;
+		}
+		else
+			{
+				gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+				fprintf(tunLogPtr,"%s %s: ***WARNING !!! WARNING !!! Could not set Qinfo Occupancy and Hop Delay Timer, vRetTimer = %d,  errno = to %d***\n",
+							ms_ctime_buf, phase2str(current_phase), vRetTimer, errno); 
+			}
+	}
+#if 0
 	if (!vq_h_TimerIsSet)
 	{
 		vRetTimer = timer_settime(qOCC_Hop_TimerID, 0, &sStartTimer, (struct itimerspec *)NULL);
@@ -1109,7 +1198,7 @@ void EvaluateQOcc_and_HopDelay(__u32 hop_key_hop_index)
 		else
 			fprintf(tunLogPtr,"%s %s: ***WARNING !!! WARNING !!! Could not set Timer, vRetTimer = %d,  errno = to %d***\n",ms_ctime_buf, phase2str(current_phase), vRetTimer, errno); 
 	}
-
+#endif
 	return;
 }
 
@@ -1130,6 +1219,7 @@ void EvaluateQOccUserInfo(struct hop_key * pHop_key, __u32 vQinfo)
 			sqOCC_TimerID_Data.src_ip_addr.y = ntohl(pHop_key->flow_key.src_ip);
 			sqOCC_TimerID_Data.dst_ip_addr.y = ntohl(pHop_key->flow_key.dst_ip);
 			sqOCC_TimerID_Data.vQinfo = vQinfo;
+			sqOCC_TimerID_Data.vHopDelay = 0; //no-op
 		}
 		else
 			{
@@ -1169,6 +1259,7 @@ void record_activity(char *pActivity)
 }
 
 #define SECS_TO_WAIT_QINFOWARN_MESSAGE 20
+#define SECS_TO_WAIT_QINFOWARN_MESSAGE_5 25
 void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 {
 	void *data_end = data + size;
@@ -1176,7 +1267,8 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 	struct hop_key hop_key;
 	long long flow_hop_latency_threshold = 0;
 	time_t clk;
-	static time_t now_time = 0, last_time = 0;
+	time_t now_time = 0;
+	static time_t last_time = 0, last_time_qocc = 0, last_time_hopd = 0;
 	char ctime_buf[27];
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
 
@@ -1250,81 +1342,132 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			fprintf(tunLogPtr, "%s %s: FLOW    : hop_latency = %u\n",ms_ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
 #endif
 		}
+			
+		vQinfoUserValue = Qinfo;
+		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 #if 1
 		if ((hop_hop_latency_threshold > vHOP_LATENCY_DELTA) && (Qinfo > vQUEUE_OCCUPANCY_DELTA))
 		{
 			if (vDebugLevel > 0)
 			{
-				gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-				fprintf(tunLogPtr, "%s %s: ***WARNING !!! WARNING !!! Both hop_latency and queue_occupancy is high!!! WARNING !!! WARNING***u\n", ms_ctime_buf, phase2str(current_phase));
-				fprintf(tunLogPtr, "%s %s: ***WARNING hop_latency  = %u\n", ms_ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
-				fprintf(tunLogPtr, "%s %s: ***WARNING queue_occupancy = %u\n", ms_ctime_buf, phase2str(current_phase), Qinfo);
+				if (vDebugLevel > 5)
+				{
+					fprintf(tunLogPtr, "%s %s: ***WARNING !!! WARNING !!! Both hop_latency and queue_occupancy is high!!! WARNING !!! WARNING***u\n", ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr, "%s %s: ***WARNING hop_latency  = %u\n", ms_ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
+					fprintf(tunLogPtr, "%s %s: ***WARNING queue_occupancy = %u\n", ms_ctime_buf, phase2str(current_phase), Qinfo);
+				}
+				else
+					{
+						now_time = clk;
+						if ((now_time - last_time) > SECS_TO_WAIT_QINFOWARN_MESSAGE)
+						{
+							fprintf(tunLogPtr, "%s %s: ***WARNING !!! WARNING !!! Both hop_latency and queue_occupancy is high!!! WARNING !!! WARNING***u\n", 
+															ms_ctime_buf, phase2str(current_phase));
+							fprintf(tunLogPtr, "%s %s: ***WARNING hop_latency  = %u\n", ms_ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
+							fprintf(tunLogPtr, "%s %s: ***WARNING queue_occupancy = %u\n", ms_ctime_buf, phase2str(current_phase), Qinfo);
+							last_time = now_time;
+						}
+					}
 			}
 
-			EvaluateQOcc_and_HopDelay(hop_key.hop_index);
+			EvaluateQOcc_and_HopDelay(&hop_key, vQinfoUserValue, hop_hop_latency_threshold);
 		}
 		else
 			{
+#if 0
 				if (vq_h_TimerIsSet)
 				{
 					timer_settime(qOCC_Hop_TimerID, 0, &sDisableTimer, (struct itimerspec *)NULL);
 					vq_h_TimerIsSet = 0;
 				}
-
-				if (hop_hop_latency_threshold > vHOP_LATENCY_DELTA)
-				{
-					if (vDebugLevel > 0)
-					{
-						fprintf(tunLogPtr, "%s %s: ***WARNING !!! WARNING !!! hop_latency = %u which is high!!! WARNING !!! WARNING***u\n", ms_ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
-					}
-				}
-			}
-
+#endif
 #if 1
-		//kinda hokey, but will leave this way for now
-		if (Qinfo > vQUEUE_OCCUPANCY_DELTA)  
-		{
-			vQinfoUserValue = Qinfo;
-			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-			if (vDebugLevel > 0)  
-			{
-				if (vDebugLevel > 5)
+				//kinda hokey, but will leave this way for now
+				if (vUseRetransmissionRate && (Qinfo > vQUEUE_OCCUPANCY_DELTA))
 				{
-					fprintf(tunLogPtr, "%s %s: ***WARNING !!! WARNING !!! queue_occupancy = %u which is high!!! WARNING !!! WARNING***\n", ms_ctime_buf, phase2str(current_phase), Qinfo);
-				}
-				else
+					if (vDebugLevel > 0)  
 					{
-						if (now_time == 0) //first time thru
+						gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+						if (vDebugLevel > 6)
 						{
-							now_time = clk;
-							last_time = now_time;
-							fprintf(tunLogPtr, "%s %s: ***WARNING !!! WARNING !!! queue_occupancy = %u which is high!!! WARNING !!! WARNING***\n", 
-																	ms_ctime_buf, phase2str(current_phase), Qinfo);
+							fprintf(tunLogPtr, "%s %s: ***WARNING !!! WARNING !!! queue_occupancy = %u which is high!!! WARNING !!! WARNING***\n", ms_ctime_buf, phase2str(current_phase), Qinfo);
 						}
 						else
 							{
 								now_time = clk;
-								if ((now_time - last_time) > SECS_TO_WAIT_QINFOWARN_MESSAGE)
+								if ((now_time - last_time_qocc) > SECS_TO_WAIT_QINFOWARN_MESSAGE)
 								{
 									fprintf(tunLogPtr, "%s %s: ***WARNING !!! WARNING !!! queue_occupancy = %u which is high!!! WARNING !!! WARNING***\n", 
 																			ms_ctime_buf, phase2str(current_phase), Qinfo);
-									last_time = now_time;
+									last_time_qocc = now_time;
 								}
 							}
 					}
-			}
-			EvaluateQOccUserInfo(&hop_key, vQinfoUserValue);
-		}
-		else
-			{
-				if (vq_TimerIsSet)
-				{
-					if (vDebugLevel > 4)
-						fprintf(tunLogPtr, "%s %s: ***INFO:  queue_occupancy is %u which is lower than threshold. Turning off Timer***\n", ms_ctime_buf, phase2str(current_phase), Qinfo);
-
-					timer_settime(qOCC_TimerID, 0, &sDisableTimer, (struct itimerspec *)NULL);
-					vq_TimerIsSet = 0;
+					
+					EvaluateQOccUserInfo(&hop_key, vQinfoUserValue);
 				}
+				else
+					{
+						if (vDebugLevel > 0)  
+						{
+							gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+							if (vDebugLevel > 6)
+							{
+								if (Qinfo > vQUEUE_OCCUPANCY_DELTA)
+									fprintf(tunLogPtr, "%s %s: ***WARNING !!! WARNING !!! queue_occupancy = %u which is high!!! WARNING !!! WARNING***\n", 
+																			ms_ctime_buf, phase2str(current_phase), Qinfo);
+				
+								if (hop_hop_latency_threshold > vHOP_LATENCY_DELTA)
+									fprintf(tunLogPtr, "%s %s: ***WARNING !!! WARNING !!! hop_delay = %u which is high!!! WARNING !!! WARNING***\n", 
+																ms_ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
+							}
+							else
+								{
+									if (Qinfo > vQUEUE_OCCUPANCY_DELTA)
+									{
+										now_time = clk;
+										if ((now_time - last_time_qocc) > SECS_TO_WAIT_QINFOWARN_MESSAGE_5)
+										{
+											fprintf(tunLogPtr, "%s %s: ***WARNING !!! WARNING !!! queue_occupancy = %u which is high!!! WARNING !!! WARNING***\n", 
+																					ms_ctime_buf, phase2str(current_phase), Qinfo);
+											last_time_qocc = now_time;
+										}
+									}
+								
+									if (hop_hop_latency_threshold > vHOP_LATENCY_DELTA)
+									{
+										now_time = clk;
+										if ((now_time - last_time_hopd) > SECS_TO_WAIT_QINFOWARN_MESSAGE_5)
+										{
+											fprintf(tunLogPtr, "%s %s: ***WARNING !!! WARNING !!! hop_delay = %u which is high!!! WARNING !!! WARNING***\n", 
+																		ms_ctime_buf, phase2str(current_phase), hop_hop_latency_threshold);
+											last_time_hopd = now_time;
+										}
+									}
+								}
+						}
+
+						if (vq_TimerIsSet)
+						{
+							if (vDebugLevel > 8)
+								fprintf(tunLogPtr, "%s %s: ***INFO:  queue_occupancy = %u or hop_delay = %u is lower than threshold. Turning off Timer***\n", 
+																		ms_ctime_buf, phase2str(current_phase), Qinfo, hop_hop_latency_threshold);
+							if (vUseRetransmissionRate)
+								timer_settime(qOCC_TimerID, 0, &sDisableTimer, (struct itimerspec *)NULL);
+
+							timer_settime(qOCC_Hop_TimerID, 0, &sDisableTimer, (struct itimerspec *)NULL);
+							vq_TimerIsSet = 0;
+						}
+
+						if (vSentPacingOver && vCanStartEvaluationTimer)
+						{
+							if (vDebugLevel > 1)
+								fprintf(tunLogPtr, "%s %s: ***INFO:  Sending Reset Pacing message***\n", ms_ctime_buf, phase2str(current_phase));
+
+							SendResetPacingMsg(&hop_key);
+							vSentPacingOver = 0;
+						}
+					}
 			}
 #endif
 #endif
@@ -1390,19 +1533,16 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 		}
 
 		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-		if (!vSrc_Dtn_IP_Found) //Ip exist 
+		if (!vSrc_Dtn_IP_Found) //Ip exist (not???)
 		{
-			//aSrc_Dtn_IPs[Last_IP_Index_Not_Exist].src_ip_addr = src_ip_addr.y;	
-			//aSrc_Dtn_IPs[Last_IP_Index_Not_Exist].currently_exist = 1;
-			//aSrc_Dtn_IPs[Last_IP_Index_Not_Exist].last_time_ip = clk;
 			--First_IP_Index_Not_Exist;
-			aSrc_Dtn_IPs[First_IP_Index_Not_Exist].src_ip_addr = src_ip_addr.y;	
+			//aSrc_Dtn_IPs[First_IP_Index_Not_Exist].src_ip_addr = src_ip_addr.y;	
+			sprintf(aSrc_Dtn_IPs[First_IP_Index_Not_Exist].aSrc_Ip2,"%u.%u.%u.%u", src_ip_addr.a[0], src_ip_addr.a[1], src_ip_addr.a[2], src_ip_addr.a[3]);
 			aSrc_Dtn_IPs[First_IP_Index_Not_Exist].currently_exist = 1;
 			aSrc_Dtn_IPs[First_IP_Index_Not_Exist].last_time_ip = clk;
+			aSrc_Dtn_IPs[First_IP_Index_Not_Exist].src_ip_addr = src_ip_addr.y;	
 			currently_attached_networks++;
 			new_traffic = 1;
-//			if (vDebugLevel > 1)
-//				fprintf(tunLogPtr, "%s %s: ***new traffic got set here3333***\n", ms_ctime_buf, phase2str(current_phase));
 		}
 #endif
 #if 1
@@ -1421,31 +1561,15 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 				}
 		}
 #endif
-#if 1
                 if (new_traffic)
-                //if ((src_ip_addr.y != ntohl(hop_key.flow_key.src_ip)) || (src_port != hop_key.flow_key.src_port) || new_traffic)
-                //if ((src_ip_addr.y != ntohl(hop_key.flow_key.src_ip)) || new_traffic)
                 {
 			new_traffic = 0;
-		//	src_ip_addr.y = ntohl(hop_key.flow_key.src_ip);
-		//	src_ip_addr.y = hop_key.flow_key.src_ip;
-			if (vDebugLevel > 1)
+			if (vDebugLevel > 5)
 			{
 				gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-				fprintf(tunLogPtr, "%s %s: ***new traffic???***\n", ms_ctime_buf, phase2str(current_phase));
+				fprintf(tunLogPtr, "%s %s: ***new traffic***\n", ms_ctime_buf, phase2str(current_phase));
 			}
-#if 0
-			vIamADestDtn  = 1;
-                        Pthread_mutex_lock(&dtn_mutex);
-                        strcpy(sMsg.msg, "Hello there!!! This is a Start of Traffic  msg...\n");
-                        sMsg.msg_no = htonl(TEST_MSG);
-			sMsg.value = htonl(0);
-			sMsgSeqNoConn++;
-			sMsg.seq_no = htonl(sMsgSeqNoConn);
-                        cdone = 1;
-                        Pthread_cond_signal(&dtn_cond);
-                        Pthread_mutex_unlock(&dtn_mutex);
-#elif 1
+			
 			vIamADestDtn  = 1;
                         Pthread_mutex_lock(&dtn_mutex);
 			while (((sMsgsIn + 1) % SMSGS_BUFFER_SIZE) == sMsgsOut)
@@ -1453,7 +1577,7 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 
                         strcpy(sMsg[sMsgsIn].msg, "Hello there!!! This is a Start of Traffic  msg...\n");
                         sMsg[sMsgsIn].msg_no = htonl(TEST_MSG);
-			sMsg[sMsgsIn].value = htonl(0);
+			sMsg[sMsgsIn].value = 0;
 			sMsg[sMsgsIn].vlan_id = htons(hop_key.flow_key.vlan_id);
 			sMsg[sMsgsIn].src_ip_addr.y = src_ip_addr.y;
 			sMsg[sMsgsIn].dst_ip_addr.y = dst_ip_addr.y;
@@ -1463,9 +1587,8 @@ void sample_func(struct threshold_maps *ctx, int cpu, void *data, __u32 size)
 			sMsgsIn = (sMsgsIn + 1) % SMSGS_BUFFER_SIZE;
                         Pthread_cond_signal(&full);
                         Pthread_mutex_unlock(&dtn_mutex);
-#endif
 		}
-#endif
+		
 		hop_key.hop_index++;
 
 	}
@@ -1637,6 +1760,37 @@ void check_req(http_s *h, char aResp[])
 		fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to change debug level of Tuning Module from %d to %d***\n", ms_ctime_buf, phase2str(current_phase), vDebugLevel, vNewDebugLevel);
 		vDebugLevel = vNewDebugLevel;
 		fprintf(tunLogPtr,"%s %s: ***New debug level is %d***\n", ms_ctime_buf, phase2str(current_phase), vDebugLevel);
+		goto after_check;
+	}
+	
+	if (strstr(pReqData,"GET /-r#"))
+	{
+		int vNewUseRetransmissionRate = 0;
+		/* Change debug level of Tuning Module */
+		char *p = (pReqData + sizeof("GET /-d#")) - 1;
+		while (isdigit(*p))
+		{
+			aNumber[count++] = *p;
+			p++;
+		}
+	
+		vNewUseRetransmissionRate = atoi(aNumber);
+
+		if (vNewUseRetransmissionRate > 0)
+		{
+			vNewUseRetransmissionRate = 1;
+			sprintf(aResp,"Changed to now use RetransmissionRate in determining pacing adjustment from %d to %d!\n", vUseRetransmissionRate, vNewUseRetransmissionRate);
+		}
+		else
+			sprintf(aResp,"Changed to not use RetransmissionRate in determining pacing adjustment from %d to %d!\n", vUseRetransmissionRate, vNewUseRetransmissionRate);
+		
+		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+		if (vNewUseRetransmissionRate)
+			fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to use RetransmissionRate in determining pacing adjustment***\n", ms_ctime_buf, phase2str(current_phase));
+		else
+			fprintf(tunLogPtr,"%s %s: ***Received request from Http Client to *NOT* use RetransmissionRate in determining pacing adjustment***\n", ms_ctime_buf, phase2str(current_phase));
+
+		vUseRetransmissionRate = vNewUseRetransmissionRate;
 		goto after_check;
 	}
 	
@@ -2323,10 +2477,12 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 }
 
 #define MAX_TUNING_APPLY	10
-
+#define SECS_TO_WAIT_APP_MESSAGE 4
 double fCheckAppBandwidth(char app[], char aDest[], __u32 dest_ip_addr, int index)
 {
 	time_t clk;
+	static time_t now_time = 0; 
+	static time_t last_time = 0;
 	char ctime_buf[27];
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
 	char buffer[128];
@@ -2358,12 +2514,37 @@ double fCheckAppBandwidth(char app[], char aDest[], __u32 dest_ip_addr, int inde
 			vBandWidthInGBits = vBandWidthInBits/(double)(1000000);
 	//		aDest_Dtn_IPs[index].last_time_ip = clk;
 			aDest_Dtn_IPs[index].vThis_app_tx_Gbits_per_sec = vBandWidthInGBits; 
-			
-			if (vDebugLevel > 2)
+
+			if (vDebugLevel > 1)
 			{
 				gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-				fprintf(tunLogPtr,"%s %s: ***The app \"%s\" with ip addr %s is using a Bandwidth of %.2f Gb/s\n", ms_ctime_buf, phase2str(current_phase), app, aDest, vBandWidthInGBits); //only need this one buffer
+				if (vDebugLevel > 5)
+				{
+					fprintf(tunLogPtr,"%s %s: ***The app \"%s\" to ip addr %s is using a Bandwidth of %.2f Gb/s\n", 
+							ms_ctime_buf, phase2str(current_phase), app, aDest, vBandWidthInGBits); //only need this one buffer
+				}
+				else
+					{
+						if (now_time == 0) //first time thru
+						{
+							now_time = clk;
+							last_time = now_time;
+							fprintf(tunLogPtr,"%s %s: ***The app \"%s\" to ip addr %s is using a Bandwidth of %.2f Gb/s\n", 
+										ms_ctime_buf, phase2str(current_phase), app, aDest, vBandWidthInGBits); //only need this one buffer
+						}
+						else
+							{
+								now_time = clk;
+								if ((now_time - last_time) > SECS_TO_WAIT_APP_MESSAGE)
+								{
+									fprintf(tunLogPtr,"%s %s: ***The app \"%s\" to ip addr %s is using a Bandwidth of %.2f Gb/s\n", 
+												ms_ctime_buf, phase2str(current_phase), app, aDest, vBandWidthInGBits); //only need this one buffer
+									last_time = now_time;
+								}
+							}
+					}
 			}
+
 			while (fgets(buffer, 128, pipe) != NULL); //dump the buffers after
 			break;
 		}
@@ -2774,32 +2955,174 @@ return;
 #endif
 
 #if 1
-void fDoQinfoAssessment(unsigned int val, char aSrc_Ip[], char aDest_Ip[], __u32 dest_ip_addr);
-void fDoQinfoAssessment(unsigned int val, char aSrc_Ip[], char aDest_Ip[], __u32 dest_ip_addr)
+void fDoCleanupResetPacing(void);
+void fDoCleanupResetPacing(void)
 {
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	char aNicSetting[1024];
 
-        time_t clk;
-        char ctime_buf[27];
-        char ms_ctime_buf[MS_CTIME_BUF_LEN];
-        char aQdiscVal[512];
-        char aNicSetting[1024];
+	sprintf(aNicSetting,"tc qdisc del dev %s root fq 2>/dev/null", netDevice);
+	
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***WARNING***: Received *CleanupResetPacing* message from a destination DTN...***\n", ms_ctime_buf, phase2str(current_phase));
+
+	if (shm_read(&vResetPacingBack, shm) && vResetPacingBack) //reset back the pacing
+	{
+		if (gTuningMode && (current_phase == LEARNING))
+		{
+			vResetPacingBack = 0;
+			shm_write(shm, &vResetPacingBack);
+
+			current_phase = TUNING;
+ 			fprintf(tunLogPtr,"%s %s: ***INFO***: *** resetting back the Pacing with the following:",ms_ctime_buf, phase2str(current_phase));
+			fprintf(tunLogPtr,"%s %s: ***INFO***: *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
+			system(aNicSetting);
+			fprintf(tunLogPtr,"%s %s: ***INFO***: !!!!Pacing has been reset!!!!\n", ms_ctime_buf, phase2str(current_phase));
+			current_phase = LEARNING;
+		}
+		else
+			if (current_phase == TUNING)
+			{
+				vResetPacingBack = 0;
+				shm_write(shm, &vResetPacingBack);
+
+				fprintf(tunLogPtr,"%s %s: ***INFO***: *** resetting back the Pacing with the following:",ms_ctime_buf, phase2str(current_phase));
+				fprintf(tunLogPtr,"%s %s: ***INFO***: *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
+				system(aNicSetting);
+				fprintf(tunLogPtr,"%s %s: ***INFO***: !!!!Pacing has been resetted!!!!\n", ms_ctime_buf, phase2str(current_phase));
+			}
+			else
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: The pacing was changed and should be changed back, but Learning Mode is on.***", ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: The simplest way to change back is to turn off Learning Mode and the Tuning Module will do it for you***\n", ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: Do the following from the Tuning Module directory to turn off Learning mode: \"./tuncli -l off\"\n", ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: You probably want to turn back on Learning mode after waiting a couple seconds with the following: \"./tuncli -l on\"\n", ms_ctime_buf, phase2str(current_phase));
+				}
+	}
+	else
+		if (shm_read(&vResetPacingBack, shm) && !vResetPacingBack) //reset back the pacing
+		{
+			if (gTuningMode && (current_phase == LEARNING))
+			{
+				current_phase = TUNING;
+ 				fprintf(tunLogPtr,"%s %s: ***INFO***: *** Pacing must have been reset already or never changed. Nothing to do here***\n",ms_ctime_buf, phase2str(current_phase));
+				current_phase = LEARNING;
+			}
+			else
+				{
+ 					fprintf(tunLogPtr,"%s %s: ***INFO***: *** Pacing must have been reset already or never changed. Nothing to do here***\n",ms_ctime_buf, phase2str(current_phase));
+				}
+		}
+
+return;
+}
+
+void fDoResetPacing(char aSrc_Ip[], char aDest_Ip[], __u32 dest_ip_addr);
+void fDoResetPacing(char aSrc_Ip[], char aDest_Ip[], __u32 dest_ip_addr)
+{
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	char aNicSetting[1024];
+	int found = 0;
+
+	sprintf(aNicSetting,"tc qdisc del dev %s root fq 2>/dev/null", netDevice);
+	
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***WARNING***: ResetPacing message from destination DTN %s***\n", ms_ctime_buf, phase2str(current_phase), aDest_Ip);
+
+	for (int i = 0; i < MAX_NUM_IP_ATTACHED; i++)
+	{
+		if (!aDest_Dtn_IPs[i].dest_ip_addr)
+			continue;
+		if (dest_ip_addr != aDest_Dtn_IPs[i].dest_ip_addr)
+			continue;
+
+		found = 1;
+		break;
+	}
+
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+
+	if (found && shm_read(&vResetPacingBack, shm) && vResetPacingBack) //reset back the pacing
+	{
+		if (gTuningMode && (current_phase == LEARNING))
+		{
+			vResetPacingBack = 0;
+			shm_write(shm, &vResetPacingBack);
+
+			current_phase = TUNING;
+ 			fprintf(tunLogPtr,"%s %s: ***INFO***: *** resetting back the Pacing with the following:",ms_ctime_buf, phase2str(current_phase));
+			fprintf(tunLogPtr,"%s %s: ***INFO***: *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
+			system(aNicSetting);
+			fprintf(tunLogPtr,"%s %s: ***INFO***: !!!!Pacing has been reset!!!!\n", ms_ctime_buf, phase2str(current_phase));
+			current_phase = LEARNING;
+		}
+		else
+			if (current_phase == TUNING)
+			{
+				vResetPacingBack = 0;
+				shm_write(shm, &vResetPacingBack);
+
+				fprintf(tunLogPtr,"%s %s: ***INFO***: *** resetting back the Pacing with the following:",ms_ctime_buf, phase2str(current_phase));
+				fprintf(tunLogPtr,"%s %s: ***INFO***: *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
+				system(aNicSetting);
+				fprintf(tunLogPtr,"%s %s: ***INFO***: !!!!Pacing has been resetted!!!!\n", ms_ctime_buf, phase2str(current_phase));
+			}
+			else
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: The pacing was changed and should be changed back, but Learning Mode is on.***", ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: The simplest way to change back is to turn off Learning Mode and the Tuning Module will do it for you***\n", ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: Do the following from the Tuning Module directory to turn off Learning mode: \"./tuncli -l off\"\n", ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: You probably want to turn back on Learning mode after waiting a couple seconds with the following: \"./tuncli -l on\"\n", ms_ctime_buf, phase2str(current_phase));
+				}
+	}
+	else
+		if (found && shm_read(&vResetPacingBack, shm) && !vResetPacingBack) //reset back the pacing
+		{
+			if (gTuningMode && (current_phase == LEARNING))
+			{
+				current_phase = TUNING;
+ 				fprintf(tunLogPtr,"%s %s: ***INFO***: *** The Pacing was never changed. No need to reset***\n",ms_ctime_buf, phase2str(current_phase));
+				current_phase = LEARNING;
+			}
+			else
+				{
+ 					fprintf(tunLogPtr,"%s %s: ***INFO***: *** The Pacing was never changed. No need to reset***\n",ms_ctime_buf, phase2str(current_phase));
+				}
+		}
+		else
+			if (!found)
+			{
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: Some Destination DTN with IP %s, wanted the Pacing on the link resetted...***\n", ms_ctime_buf, phase2str(current_phase), aDest_Ip);
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: However, We are not currently attached to that DTN, so the link may have been broken... no changes to Pacing in this case....***\n", ms_ctime_buf, phase2str(current_phase));
+			}
+return;
+}
+
+void fDoQinfoAssessment(unsigned int val, unsigned int hop_delay, char aSrc_Ip[], char aDest_Ip[], __u32 dest_ip_addr);
+void fDoQinfoAssessment(unsigned int val, unsigned int hop_delay, char aSrc_Ip[], char aDest_Ip[], __u32 dest_ip_addr)
+{
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	char aQdiscVal[512];
+	char aNicSetting[1024];
 	int found = 0;
 	int vIsVlan = 0;
 
 	double vRetransmissionRate = 0.0;
 	double vThis_app_tx_Gbits_per_sec;
-        //FILE *nicCfgFPtr = 0;
+	double vThis_average_tx_Gbits_per_sec = 0.0, vNewPacingValue = 0.0;;
 
-        //For now
-        //memset(aQdiscVal,0,sizeof(aQdiscVal));
-        //strcpy(aQdiscVal,"aTest");
-        //sprintf(aNicSetting,"tc qdisc show dev %s root > /tmp/NIC.cfgfile 2>/dev/null",netDevice);
-        //system(aNicSetting);
-        //stat("/tmp/NIC.cfgfile", &sb);
+	strcpy(aQdiscVal,"fq");
+	if (gTuningMode)
+		current_phase = TUNING;
 
-        strcpy(aQdiscVal,"fq");
-        gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-        fprintf(tunLogPtr,"%s %s: ***WARNING***: Qinfo message with value %u from destination DTN %s***\n", ms_ctime_buf, phase2str(current_phase), val, aDest_Ip);
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***WARNING***: Qinfo message with value %u from destination DTN %s***\n", ms_ctime_buf, phase2str(current_phase), val, aDest_Ip);
 
 	for (int i = 0; i < MAX_NUM_IP_ATTACHED; i++)
 	{
@@ -2815,63 +3138,281 @@ void fDoQinfoAssessment(unsigned int val, char aSrc_Ip[], char aDest_Ip[], __u32
 		break;
 	}
 
-        gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-        if (found && (vRetransmissionRate > vRetransmissionRateThreshold))
-        {
-                fprintf(tunLogPtr,"%s %s: ***WARNING***: The Destination IP %s, with the retransmission rate of %.5f is higher that the retansmission threshold of %.5f.\n", ms_ctime_buf, phase2str(current_phase), aDest_Ip, vRetransmissionRate, vRetransmissionRateThreshold);
-                sprintf(aNicSetting,"tc qdisc del dev %s root %s 2>/dev/null; tc qdisc add dev %s root fq maxrate %.2fgbit", netDevice, aQdiscVal, netDevice, (vGlobal_average_tx_Gbits_per_sec * vMaxPacingRate)); //90%
 
-                if (gTuningMode && (current_phase == LEARNING))
-                {
-                        current_phase = TUNING;
-                        fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current average transmitted bytes on the link is %.2f. Will adjust the pacing with the following:\n",
-                                                                                                                                                        ms_ctime_buf, phase2str(current_phase), vGlobal_average_tx_Gbits_per_sec);
-                        fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the flow. Current average transmitted bytes on this flow is %.2f. Will adjust the pacing with the following:\n",
-                                                                                                                                                        ms_ctime_buf, phase2str(current_phase), vThis_app_tx_Gbits_per_sec);
-                        fprintf(tunLogPtr,"%s %s: ***WARNING***: *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
-                        system(aNicSetting);
-                        fprintf(tunLogPtr,"%s %s: ***WARNING***: !!!!Pacing has been adjusted!!!!\n", ms_ctime_buf, phase2str(current_phase));
-                        current_phase = LEARNING;
-                        vResetPacingBack = 1;
+	vThis_average_tx_Gbits_per_sec = vGlobal_average_tx_Gbits_per_sec;
+
+	fprintf(tunLogPtr,"%s %s: ***WARNING***: tx is %.2f Gb/s on the link \n", ms_ctime_buf, phase2str(current_phase), vThis_average_tx_Gbits_per_sec);
+
+	if (vThis_average_tx_Gbits_per_sec < 0.5) //tx bits on link not propagated properly yet
+	{
+		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+		fprintf(tunLogPtr,"%s %s: ***WARNING***: Average TX Gb/s is %.2f and appears to not be calculated properly yet. Will check...\n", 
+					ms_ctime_buf, phase2str(current_phase), vThis_average_tx_Gbits_per_sec);
+			//vThis_average_tx_Gbits_per_sec = netDeviceSpeed/(double)1000;
+			//vAdjustSpeed = 1;
+		fGetTxBitRate();
+		vThis_average_tx_Gbits_per_sec = vGlobal_average_tx_Gbits_per_sec;
+		
+		fprintf(tunLogPtr,"%s %s: ***WARNING***: After recalculation, Average TX Gb/s is %.2f...\n", 
+					ms_ctime_buf, phase2str(current_phase), vThis_average_tx_Gbits_per_sec);
+	}
+	
+	vNewPacingValue = vThis_average_tx_Gbits_per_sec * vMaxPacingRate;
+	if (vNewPacingValue > 34.0) //somehow the maxrate can't be over 34.3 - saw during testing
+	{
+		fprintf(tunLogPtr,"%s %s: ***WARNING***: Pacing Value is over 34.0. Pacing cannot be set over 34.3. Setting to 34.0...\n", 
+													ms_ctime_buf, phase2str(current_phase));
+		vNewPacingValue = 34.0;
+	}
+
+	sprintf(aNicSetting,"tc qdisc del dev %s root %s 2>/dev/null; tc qdisc add dev %s root fq maxrate %.2fgbit", netDevice, aQdiscVal, netDevice, vNewPacingValue); //90%
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	if (found && hop_delay)
+	{
+		fprintf(tunLogPtr,"%s %s: ***WARNING***: The Destination IP %s, has a queue occupancy of %u and a hop_delay of %u.\n", ms_ctime_buf, phase2str(current_phase), aDest_Ip, val, hop_delay);
+		//sprintf(aNicSetting,"tc qdisc del dev %s root %s 2>/dev/null; tc qdisc add dev %s root fq maxrate %.2fgbit", netDevice, aQdiscVal, netDevice, (vGlobal_average_tx_Gbits_per_sec * vMaxPacingRate)); //90%
+		if (gTuningMode)
+		{
+			fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current average transmitted bytes on the link is %.2f Gb/s. Will adjust the pacing based on this value.\n",
+																				ms_ctime_buf, phase2str(current_phase), vThis_average_tx_Gbits_per_sec);
+			fprintf(tunLogPtr,"%s %s: ****INFO*****: Current average transmitted bytes on this flow is %.2f Gb/s. \n", ms_ctime_buf, phase2str(current_phase), vThis_app_tx_Gbits_per_sec);
+			fprintf(tunLogPtr,"%s %s: ***WARNING***: Adjusting using *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
+			system(aNicSetting);
+			current_phase = LEARNING;
+			vResetPacingBack = 1;
 			shm_write(shm, &vResetPacingBack);
 
-                        fprintf(tunLogPtr,"%s %s: ***WARNING***: !!!!Pacing has been adjusted!!!! %d\n", ms_ctime_buf, phase2str(current_phase), vResetPacingBack);
-                        current_phase = LEARNING;
-                }
-                else
-                        if (current_phase == TUNING)
-                        {
-                                fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current average transmitted bytes on the link is %.2f. Will adjust the pacing with the following:\n",
-                                                                                                                                                                ms_ctime_buf, phase2str(current_phase), vGlobal_average_tx_Gbits_per_sec);
-                                fprintf(tunLogPtr,"%s %s: ***WARNING***: *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
-                                system(aNicSetting);
-                                fprintf(tunLogPtr,"%s %s: ***WARNING***: !!!!Pacing has been adjusted!!!!\n", ms_ctime_buf, phase2str(current_phase));
-                                vResetPacingBack = 1;
+			fprintf(tunLogPtr,"%s %s: ***WARNING***: !!!!Pacing has been adjusted!!!! %d\n", ms_ctime_buf, phase2str(current_phase), vResetPacingBack);
+			current_phase = LEARNING;
+		}
+ 		else
+			{
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current average transmitted bytes on the link is %.2f Gb/s. Try running the following:\n",
+																		ms_ctime_buf, phase2str(current_phase), vThis_average_tx_Gbits_per_sec);
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: \"%s\"\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
+			}
+	}
+	else
+ 		if (found && !hop_delay && (vRetransmissionRate > vRetransmissionRateThreshold)) //!hop_delay means we are also using ueue occuoancy and retransmission rate
+		{
+			fprintf(tunLogPtr,"%s %s: ***WARNING***: The Destination IP %s, with the retransmission rate of %.5f is higher that the retansmission threshold of %.5f.\n", ms_ctime_buf, phase2str(current_phase), aDest_Ip, vRetransmissionRate, vRetransmissionRateThreshold);
+		//	sprintf(aNicSetting,"tc qdisc del dev %s root %s 2>/dev/null; tc qdisc add dev %s root fq maxrate %.2fgbit", netDevice, aQdiscVal, netDevice, (vGlobal_average_tx_Gbits_per_sec * vMaxPacingRate)); //90%
+
+			if (gTuningMode)
+			{
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current average transmitted bytes on the link is %.2f Gb/s. Will adjust the pacing based on this value.\n",
+																				ms_ctime_buf, phase2str(current_phase), vThis_average_tx_Gbits_per_sec);
+				fprintf(tunLogPtr,"%s %s: ****INFO*****: Current average transmitted bytes on this flow is %.2f Gb/s. \n", ms_ctime_buf, phase2str(current_phase), vThis_app_tx_Gbits_per_sec);
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: Adjusting using *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
+				system(aNicSetting);
+				vResetPacingBack = 1;
 				shm_write(shm, &vResetPacingBack);
-                        }
-                        else
-                                {
-                                        fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current average transmitted bytes on the link is %.2f. Try running the following:\n",
-                                                                                                                                                        ms_ctime_buf, phase2str(current_phase), vGlobal_average_tx_Gbits_per_sec);
-                                        fprintf(tunLogPtr,"%s %s: ***WARNING***: \"%s\"\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
-                                }
-        }
-        else
-		if (!found)
-        	{
-               		fprintf(tunLogPtr,"%s %s: ***WARNING***: The Destination DTN with IP %s, complained that congestion was on the link...***\n", ms_ctime_buf, phase2str(current_phase), aDest_Ip);
-               		fprintf(tunLogPtr,"%s %s: ***WARNING***: However, We are not currently attached to that DTN, so the link may have been broken... no changes to Pacing in this case....***\n", ms_ctime_buf, phase2str(current_phase));
-        	}
-		else	
-        		{
-                		fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link.:***\n", ms_ctime_buf, phase2str(current_phase));
-                		fprintf(tunLogPtr,"%s %s: ***WARNING***: However, the retransmission rate of %.5f is lower that the retansmission threshold of %.5f**\n",
-                                                                                       ms_ctime_buf, phase2str(current_phase), vRetransmissionRate, vRetransmissionRateThreshold);
-        		}
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: !!!!Pacing has been adjusted!!!! %d\n", ms_ctime_buf, phase2str(current_phase), vResetPacingBack);
+			}
+			else
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current average transmitted bytes on the link is %.2f Gb/s. Try running the following:\n",
+																			ms_ctime_buf, phase2str(current_phase), vThis_average_tx_Gbits_per_sec);
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: \"%s\"\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
+				}
+		}
+		else
+			if (!found)
+			{
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: The Destination DTN with IP %s, complained that congestion was on the link...***\n", ms_ctime_buf, phase2str(current_phase), aDest_Ip);
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: However, We are not currently attached to that DTN, so the link may have been broken... no changes to Pacing in this case....***\n", ms_ctime_buf, phase2str(current_phase));
+			}
+			else	
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link.:***\n", ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: However, the retransmission rate of %.5f is lower that the retansmission threshold of %.5f**\n",
+												ms_ctime_buf, phase2str(current_phase), vRetransmissionRate, vRetransmissionRateThreshold);
+				}
+	fflush(tunLogPtr);
+
+	if (gTuningMode)
+		current_phase = LEARNING; // set back
 return;
 }
 #endif
+
 #define SECS_TO_WAIT_TX_RX_MESSAGE 20
+void fGetTxBitRate()
+{
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	char buffer[128];
+	FILE *pipe;
+	unsigned long last_tx_bytes = 0, last_rx_bytes = 0;	
+	int check_bitrate_interval = 0;
+	unsigned long rx_before, rx_now, rx_bytes_tot;
+	unsigned long tx_before, tx_now, tx_bytes_tot;
+	double average_tx_kbits_per_sec = 0.0;
+	double average_tx_Gbits_per_sec = 0.0;
+	double average_rx_Gbits_per_sec = 0.0;
+	double average_rx_kbits_per_sec = 0.0;
+	double tx_jitter = 0.30;
+	char try[1024];
+	int stage = 0;
+
+	sprintf(try,"bpftrace -e \'BEGIN { @name;} kprobe:dev_get_stats { $nd = (struct net_device *) arg0; @name = $nd->name; } kretprobe:dev_get_stats /@name == \"%s\"/ { $rtnl = (struct rtnl_link_stats64 *) retval; $rx_bytes = $rtnl->rx_bytes; $tx_bytes = $rtnl->tx_bytes; printf(\"%s %s\\n\", $tx_bytes, $rx_bytes); } interval:s:1 { exit(); } END { clear(@name); }\'",netDevice,"%lu","%lu");
+
+start:
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***using TxBitRate()***\n", ms_ctime_buf, phase2str(current_phase));
+	fflush(tunLogPtr);
+#if 0
+	vIamASrcDtn = 1;
+	if (previous_average_tx_Gbits_per_sec && vIamASrcDtn)
+	{
+		vIpCount = MAX_NUM_IP_ATTACHED;
+                        
+		while (!aDest_Dtn_IPs[vLastIpFound].dest_ip_addr && vIpCount)
+		{
+			if (vDebugLevel > 8)
+				fprintf(tunLogPtr,"%s %s: ***looking for app ip addrs vLastIpFound= %d, ...vIpCount = %d***\n", ms_ctime_buf, phase2str(current_phase), vLastIpFound, vIpCount);
+			vIpCount--;
+                        vLastIpFound++;
+                        if (vLastIpFound == MAX_NUM_IP_ATTACHED)
+				vLastIpFound = 0;
+                }
+		if (vIpCount)
+		{
+			fGetAppBandWidth(aDest_Dtn_IPs[vLastIpFound].aDest_Ip2, vLastIpFound);
+                        vLastIpFound++;
+                        if (vLastIpFound == MAX_NUM_IP_ATTACHED)
+				vLastIpFound = 0;
+		}
+	//	sleep(1);
+	}
+#endif
+#if 1
+	rx_before =  rx_now = rx_bytes_tot = rx_kbits_per_sec = 0;
+	tx_before =  tx_now = tx_bytes_tot = tx_kbits_per_sec = 0;
+	last_tx_bytes = last_rx_bytes = 0;	
+#endif
+	tx_bytes_tot = 0;
+	rx_bytes_tot = 0;	
+	tx_kbits_per_sec = 0;
+	rx_kbits_per_sec = 0;
+
+	pipe = popen(try,"r");
+	if (!pipe)
+	{
+		printf("popen failed!\n");
+		return;
+	}
+
+	// read for 2 lines of process:
+	if (!feof(pipe))
+	{
+		// use buffer to read and add to result
+		if (fgets(buffer, 128, pipe) != NULL);
+			//printf("buffer0 is %s",buffer);		
+		else
+			{
+				printf("Not working****\n");
+				return;
+			}
+	}
+
+	if (!feof(pipe))
+	{	
+ 		if (fgets(buffer, 128, pipe) != NULL)
+		{
+			//printf("buffer1 is %s",buffer);		
+			sscanf(buffer,"%lu %lu", &tx_before, &rx_before);
+			//printf("tx_bytes = %lu, rx_bytes = %lu\n",tx_before,rx_before);
+			check_bitrate_interval++;
+			stage = 1;
+		}
+		else
+			{
+				printf("Not working****\n");
+				return;
+			}
+	}
+
+	while (!feof(pipe) && stage)
+	{
+		if (fgets(buffer, 128, pipe) != NULL)
+		{
+			//printf("buffer2 is %s",buffer);		
+			sscanf(buffer,"%lu %lu", &tx_now, &rx_now);
+			if(tx_now != 0)
+			{
+				last_tx_bytes = tx_now;
+				last_rx_bytes = rx_now;
+			}
+			tx_now = 0;
+			rx_now = 0;
+		}
+	}
+	pclose(pipe);
+
+	tx_bytes_tot =  last_tx_bytes - tx_before;
+	rx_bytes_tot =  last_rx_bytes - rx_before;
+
+	//tx_kbits_per_sec = ((8 * tx_bytes_tot) / 1024) / secs_passed;
+	//rx_kbits_per_sec = ((8 * rx_bytes_tot) / 1024) / secs_passed;;
+	tx_kbits_per_sec = ((8 * tx_bytes_tot) / 1000);
+	rx_kbits_per_sec = ((8 * rx_bytes_tot) / 1000);
+
+	average_tx_kbits_per_sec += tx_kbits_per_sec;	
+	average_rx_kbits_per_sec += rx_kbits_per_sec;
+	if (check_bitrate_interval >= BITRATE_INTERVAL) 
+	{
+		//average_tx_bits_per_sec = average_tx_bits_per_sec/check_bitrate_interval;
+		average_tx_kbits_per_sec = average_tx_kbits_per_sec/(double)check_bitrate_interval;
+		average_tx_Gbits_per_sec = average_tx_kbits_per_sec/(double)(1000000);
+		average_rx_kbits_per_sec = average_rx_kbits_per_sec/(double)check_bitrate_interval;;
+		average_rx_Gbits_per_sec = average_rx_kbits_per_sec/(double)(1000000);;
+		check_bitrate_interval = 0;
+		
+		if (average_tx_Gbits_per_sec)
+		{
+			//Sanity checking here - need to further investigate how this could happen
+			if (average_tx_Gbits_per_sec > (netDeviceSpeed/1000))
+			{
+				//can't be - something off - don't use as a recorded value 
+				if (vDebugLevel > 0)
+				{
+					gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+					fprintf(tunLogPtr,"%s %s: ***ERROR GetTx BITRATE*** average_tx_Gbits_per_sec = %.2f Gb/s is above maximum Bandwidth of %.2f... skipping this value\n",ms_ctime_buf, phase2str(current_phase), average_tx_Gbits_per_sec, netDeviceSpeed/1000.0);
+				}
+				average_tx_Gbits_per_sec = 0.0;
+				average_tx_kbits_per_sec = 0.0;
+				average_rx_kbits_per_sec = 0.0;
+				average_rx_Gbits_per_sec = 0.0;
+				goto move_along;
+			}
+			
+			average_tx_Gbits_per_sec = average_tx_Gbits_per_sec + tx_jitter;
+		}
+	}
+
+	if (!check_bitrate_interval)
+	{
+		vGlobal_average_tx_Gbits_per_sec = average_tx_Gbits_per_sec;
+		return;
+	}
+
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	
+ck_stage:
+	if (stage)
+	{
+		stage = 0;
+		goto start;
+	}
+
+	fprintf(tunLogPtr, "%s %s: ***Problems*** stage not set...\n", ms_ctime_buf, phase2str(current_phase));
+	fflush(tunLogPtr);
+move_along:
+return;
+}
+
 void * fDoRunGetThresholds(void * vargp)
 {
 	time_t clk, now_time = 0, last_time = 0;
@@ -2919,7 +3460,7 @@ start:
                         
 		while (!aDest_Dtn_IPs[vLastIpFound].dest_ip_addr && vIpCount)
 		{
-			if (vDebugLevel > 5)
+			if (vDebugLevel > 8)
 				fprintf(tunLogPtr,"%s %s: ***looking for app ip addrs vLastIpFound= %d, ...vIpCount = %d***\n", ms_ctime_buf, phase2str(current_phase), vLastIpFound, vIpCount);
 			vIpCount--;
                         vLastIpFound++;
@@ -3026,23 +3567,31 @@ start:
 
 		if (vq_TimerIsSet) //Turn off this timer since transmission has stopped
 		{
-			fprintf(tunLogPtr,"%s %s: ***INFO***: Activity on link has stopped for now *** Turning off Queue Occupancy timer:\n",ms_ctime_buf, phase2str(current_phase));
+			fprintf(tunLogPtr,"%s %s: ***INFO***: Activity on link has stopped for now *** Turning off Queue Occupancy/Hop Delay timer:\n",ms_ctime_buf, phase2str(current_phase));
 			timer_settime(qOCC_TimerID, 0, &sDisableTimer, (struct itimerspec *)NULL);
+			timer_settime(qOCC_Hop_TimerID, 0, &sDisableTimer, (struct itimerspec *)NULL);
 			vq_TimerIsSet = 0;
 		}
-
+#if 0
 		if (vq_h_TimerIsSet) //Turn off this timer since transmission has stopped
 		{		
 			fprintf(tunLogPtr,"%s %s: ***INFO***: Activity on link has stopped for now *** Turning off Queue occupancy and Hop Delay timer:",ms_ctime_buf, phase2str(current_phase));
 			timer_settime(qOCC_Hop_TimerID, 0, &sDisableTimer, (struct itimerspec *)NULL);
 			vq_h_TimerIsSet = 0;
 		}
-
+#endif
 		if (!vCanStartEvaluationTimer)
 		{
 			fprintf(tunLogPtr,"%s %s: ***INFO***: Activity on link has stopped for now *** Turning off Evaluation timer:\n",ms_ctime_buf, phase2str(current_phase));
 			timer_settime(qEvaluation_TimerID, 0, &sDisableTimer, (struct itimerspec *)NULL);
 			vCanStartEvaluationTimer = 1;
+		}
+
+		if (vSentPacingOver)
+		{
+			fprintf(tunLogPtr,"%s %s: ***INFO***: Activity on link has stopped for now *** Turning off SentPacingOver flag and will try to Cleanup pacing on peer:\n",ms_ctime_buf, phase2str(current_phase));
+			SendResetCleanUpPacingMsg();
+			vSentPacingOver = 0;
 		}
 
 		if (shm_read(&vResetPacingBack, shm) && vResetPacingBack) //nothing happening - reset back the pacing
@@ -3135,8 +3684,14 @@ start:
 		}
 	}
 
+	if (!check_bitrate_interval)
+	{
+		vGlobal_average_tx_Gbits_per_sec = average_tx_Gbits_per_sec;
+		vGlobal_average_rx_Gbits_per_sec = average_rx_Gbits_per_sec;
+	}
+
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-			
+	
 	if (vDebugLevel > 6 && tx_kbits_per_sec)
 	{
 		fprintf(tunLogPtr,"%s %s: DEV %s: TX : %.2f Gb/s RX : %.2f Gb/s\n", ms_ctime_buf, phase2str(current_phase), netDevice, tx_kbits_per_sec/(double)(1000000), rx_kbits_per_sec/(double)(1000000));
@@ -3168,6 +3723,7 @@ start:
 			}
 	}
 
+	//vGlobal_average_tx_Gbits_per_sec = average_tx_Gbits_per_sec;
 
 	if (vDebugLevel > 1 && average_tx_Gbits_per_sec)
 	{
@@ -3204,7 +3760,7 @@ start:
 
 	if (!check_bitrate_interval)
 	{
-		vGlobal_average_tx_Gbits_per_sec = average_tx_Gbits_per_sec;
+	//	vGlobal_average_tx_Gbits_per_sec = average_tx_Gbits_per_sec;
 
 		if (tune == 3 && average_tx_Gbits_per_sec)
 		{
@@ -3409,7 +3965,7 @@ tx_Gbs_off:
 				sFlowCounters[vFlowCount].gFlowCountUsed = 0;
 			}
 
-		if (vDebugLevel > 1)
+		if (vDebugLevel > 5)
 		{
 			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 			fprintf(tunLogPtr, "%s %s: ***New traffic %lu***\n", ms_ctime_buf, phase2str(current_phase), count++);
@@ -4074,8 +4630,11 @@ retrans:
 		return (char *)0;
 	}
 
+	int thiscount = 0;
+	int thisfoundcnt = 0;
 	while (!feof(pipe))
 	{
+		thiscount++;
 		// use buffer to read and add to result
 		if (fgets(buffer, 256, pipe) != NULL)
 		{
@@ -4126,7 +4685,7 @@ chk_this:
 					fprintf(tunLogPtr,"\n%s %s: ***using new code *** IPs are *** aDestBin is *%s*, aDest is *%s*\n", 
 									ms_ctime_buf, phase2str(current_phase),aDest_Dtn_IPs[vLastIpFound].aDest_Ip2_Binary, aDest_Dtn_IPs[vLastIpFound].aDest_Ip2);
 				}
-				aDest_Dtn_IPs[vLastIpFound].last_time_ip = clk;
+				//aDest_Dtn_IPs[vLastIpFound].last_time_ip = clk;
 #endif
 				foundstr = strstr(foundstr,"totrt");
 				if (foundstr)
@@ -4139,6 +4698,8 @@ chk_this:
 					if (*foundstr == '0')
 						continue; //no need to count zeros
 #endif
+					aDest_Dtn_IPs[vLastIpFound].last_time_ip = clk;
+
 					while (isdigit(*foundstr))
                 			{
                        		 		aValue[count++] = *foundstr;
@@ -4664,7 +5225,7 @@ rttstart:
 
 			while (!aDest_Dtn_IPs[vLastIpPinged].dest_ip_addr && count)
 			{
-				if (vDebugLevel > 5)
+				if (vDebugLevel > 8)
 					fprintf(tunLogPtr,"%s %s: ***looking for ping ip addrs vLastIpPinged= %d, ...count = %d***\n", ms_ctime_buf, phase2str(current_phase), vLastIpPinged, count);
 				count--;
 				vLastIpPinged++;
@@ -5086,13 +5647,19 @@ process_request(int sockfd)
 		}
 
 
-		if ((ntohl(from_cli.msg_no) == QINFO_MSG) || (ntohl(from_cli.msg_no) == TEST_MSG))
+		if ((ntohl(from_cli.msg_no) == QINFO_MSG) || (ntohl(from_cli.msg_no) == TEST_MSG) || (ntohl(from_cli.msg_no) == RESET_PACING_MSG) )
 		{
 			uSrc_Ip.y  = ntohl(from_cli.src_ip_addr.y);
 			uDst_Ip.y  = ntohl(from_cli.dst_ip_addr.y);
 			sprintf(aSrc_Ip,"%u.%u.%u.%u", uSrc_Ip.a[0], uSrc_Ip.a[1], uSrc_Ip.a[2], uSrc_Ip.a[3]);
 			sprintf(aDest_Ip,"%u.%u.%u.%u", uDst_Ip.a[0], uDst_Ip.a[1], uDst_Ip.a[2], uDst_Ip.a[3]);
 		}
+		else
+			if (ntohl(from_cli.msg_no) == CLEANUP_RESET_PACING_MSG)
+			{
+				uSrc_Ip.y  = ntohl(from_cli.src_ip_addr.y);
+				sprintf(aSrc_Ip,"%u.%u.%u.%u", uSrc_Ip.a[0], uSrc_Ip.a[1], uSrc_Ip.a[2], uSrc_Ip.a[3]);
+			}
 
 		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 		if (ntohl(from_cli.msg_no) == QINFO_MSG)
@@ -5104,25 +5671,50 @@ process_request(int sockfd)
 									ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.msg_no), ntohl(from_cli.value), aSrc_Ip, aDest_Ip, from_cli.msg);
 			}
 
-			fDoQinfoAssessment(ntohl(from_cli.value), aSrc_Ip, aDest_Ip, uDst_Ip.y);
+			fDoQinfoAssessment(ntohl(from_cli.value), ntohl(from_cli.vHopDelay), aSrc_Ip, aDest_Ip, uDst_Ip.y);
 		}
 		else
-			if (ntohl(from_cli.msg_no) == TEST_MSG)
+			if (ntohl(from_cli.msg_no) == RESET_PACING_MSG)
 			{
 				if (vDebugLevel > 0)
 				{
-					fprintf(tunLogPtr,"\n%s %s: ***Received a message %u from destination DTN...***\n", 
-									ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.seq_no));
-					fprintf(tunLogPtr,"%s %s: ***msg_no = %d, my_ip = %s, dest_ip = %s, msg buf = %s", 
-									ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.msg_no), aSrc_Ip, aDest_Ip, from_cli.msg);
+					fprintf(tunLogPtr,"\n%s %s: ***Received Reset Pacing message %u from destination DTN...***\n", ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.seq_no));
+					fprintf(tunLogPtr,"%s %s: ***msg_no = %d, msg value = %u, my_ip = %s, dest_ip = %s, msg buf = %s", 
+										ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.msg_no), ntohl(from_cli.value), aSrc_Ip, aDest_Ip, from_cli.msg);
 				}
+
+				fDoResetPacing(aSrc_Ip, aDest_Ip, uDst_Ip.y);
 			}
 			else
-				if (vDebugLevel > 2)
+				if (ntohl(from_cli.msg_no) == TEST_MSG)
 				{
-					fprintf(tunLogPtr,"\n%s %s: ***Received unknown message from some DTN???..., msg buf = %s***\n", 
-									ms_ctime_buf, phase2str(current_phase), from_cli.msg);
+					if (vDebugLevel > 0)
+					{
+						fprintf(tunLogPtr,"\n%s %s: ***Received a message %u from destination DTN...***\n", 
+										ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.seq_no));
+						fprintf(tunLogPtr,"%s %s: ***msg_no = %d, my_ip = %s, dest_ip = %s, msg buf = %s", 
+										ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.msg_no), aSrc_Ip, aDest_Ip, from_cli.msg);
+					}
 				}
+				else
+					if (ntohl(from_cli.msg_no) == CLEANUP_RESET_PACING_MSG)
+					{
+						if (vDebugLevel > 0)
+						{
+							fprintf(tunLogPtr,"\n%s %s: ***Received a message %u from a destination DTN...***\n", 
+											ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.seq_no));
+							fprintf(tunLogPtr,"%s %s: ***msg_no = %d, my_ip = %s, msg buf = %s", 
+											ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.msg_no), aSrc_Ip, from_cli.msg);
+						}
+				
+						fDoCleanupResetPacing();
+					}
+					else
+						if (vDebugLevel > 2)
+						{
+							fprintf(tunLogPtr,"\n%s %s: ***Received unknown message from some DTN???..., msg buf = %s***\n", 
+											ms_ctime_buf, phase2str(current_phase), from_cli.msg);
+						}
 
 		fflush(tunLogPtr);
 	}

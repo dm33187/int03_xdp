@@ -13,6 +13,7 @@ static char * Usage = "This is an HTTP client to talk to Tuning Module. \
 		       \nUse \"tuncli -b sock_rx_buff [value]\" to change the maximum OS receive buffer size for all types of connections. \
 		       \nUse \"tuncli -b sock_tx_buff [value]\" to change the maximum OS send buffer size for all types of connections. \
 		       \nUse \"tuncli -d [value]\" to change the debug value of the Tuning Module. Values range from 0 to 10. \
+		       \nUse \"tuncli -r [value]\" to use retransmission rate in adjusting pacing. 0 (don't use), 1 (use). \
 		       \nUse \"tuncli -ct hop_late [value]\" to change the value of the hop latency delta. \
 		       \nUse \"tuncli -ct flow_late [value]\" to change the value of the flow latency delta. \
 		       \nUse \"tuncli -ct q_occ [value]\" to change the value of the queue occupancy delta. \
@@ -71,14 +72,23 @@ int main(int argc, const char *argv[])
 					}
 				}
 				else
-					if (strcmp(argv[1],"-l") == 0)
+					if (strcmp(argv[1],"-r") == 0)
 					{
-						if ((strcmp(argv[2],"on") == 0) || (strcmp(argv[2],"off") == 0))
+						if (isdigit(*argv[2]))
 						{
 							sprintf(aSecondPart,"%s#%s",argv[1], argv[2]);
 							goto carry_on;
 						}
 					}
+					else
+						if (strcmp(argv[1],"-l") == 0)
+						{
+							if ((strcmp(argv[2],"on") == 0) || (strcmp(argv[2],"off") == 0))
+							{
+								sprintf(aSecondPart,"%s#%s",argv[1], argv[2]);
+								goto carry_on;
+							}
+						}
 				/* fall thru */
 			}
 	
