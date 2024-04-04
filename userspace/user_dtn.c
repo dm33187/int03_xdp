@@ -243,6 +243,7 @@ unsigned int sMsgSeqNoConn= 0;
 char aDest_Ip2[32];
 char aDest_Ip2_Binary[32];
 char aLocal_Ip[32];
+char aLocal_IpPrev[32];
 
 
 
@@ -2194,7 +2195,7 @@ void * fDoRunHttpServer(void * vargp)
 	return ((char *)0);
 }
 
-void fGetMtuInfoOfDevices(void)
+void fGetMtuInfoOfDevices(char aLocal_Ip[])
 {
 
 	time_t clk;
@@ -2254,8 +2255,6 @@ finish_up:
 	if (found)
 	{
 		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
-		fprintf(tunLogPtr, "%sBITRATE : !!!*****PLEASE CHECK IF MTU of Physical Interface \"%s\" is correct or MTU of Interface \"%s\" is correct********!!!\n",
-			pLearningSpacesMinusLearning, netDevice, log_inter);
 		
 		sprintf(try,"cat /sys/class/net/%s/mtu", log_inter);
 
@@ -2273,9 +2272,6 @@ finish_up:
 			}
 
 		pclose(pipe2);		
-
-
-		fprintf(tunLogPtr, "%sBITRATE : !!!***** MTU of %s is %s", pLearningSpacesMinusLearning, log_inter, buffer);
 		
 		sprintf(try,"cat /sys/class/net/%s/mtu", netDevice);
 
@@ -2294,10 +2290,33 @@ finish_up:
 
 		pclose(pipe3);		
 		
-		fprintf(tunLogPtr, "%sBITRATE : !!!***** MTU of %s is %s", pLearningSpacesMinusLearning, netDevice, buffer2);
 
 		if(strcmp(buffer, buffer2) != 0)
-			fprintf(tunLogPtr, "%sBITRATE : !!!***** WARNING ***** ABOVE MTUs are NOT the same*****!!!\n", pLearningSpacesMinusLearning);
+		{
+			gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+			fprintf(tunLogPtr, "%sBITRATE : !!!***** MTU of %s is %s", pLearningSpacesMinusLearning, log_inter, buffer);
+			fprintf(tunLogPtr, "%sBITRATE : !!!***** MTU of %s is %s", pLearningSpacesMinusLearning, netDevice, buffer2);
+			fprintf(tunLogPtr, "%sBITRATE : !!!***** WARNING ***** ABOVE MTUs are *NOT* the same*****!!!\n", pLearningSpacesMinusLearning);
+			fprintf(tunLogPtr, "%sBITRATE : !!!***** PLEASE CHECK IF MTUs of Physical Interface \"%s\" and MTU of Interface \"%s\" are correct!!!\n",
+												pLearningSpacesMinusLearning, netDevice, log_inter);
+			fprintf(tunLogPtr, "%sBITRATE : !!!***** Please also bear in mind that any VLANs running over a physical interface should have a MTU which\n",
+												pLearningSpacesMinusLearning);
+			fprintf(tunLogPtr, "%sBITRATE : !!!***** is some value reasonable less than that of the interface to allow for padding from INT data.\n",
+												pLearningSpacesMinusLearning);
+		}
+		else 
+			{
+				gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+				fprintf(tunLogPtr, "%sBITRATE : !!!***** MTU of %s is %s", pLearningSpacesMinusLearning, log_inter, buffer);
+				fprintf(tunLogPtr, "%sBITRATE : !!!***** MTU of %s is %s", pLearningSpacesMinusLearning, netDevice, buffer2);
+				fprintf(tunLogPtr, "%sBITRATE : !!!***** WARNING ***** ABOVE MTUs *are* the same*****!!!\n", pLearningSpacesMinusLearning);
+				fprintf(tunLogPtr, "%sBITRATE : !!!***** PLEASE CHECK IF MTUs of Physical Interface \"%s\" and MTU of Interface \"%s\" are correct!!!\n",
+													pLearningSpacesMinusLearning, netDevice, log_inter);
+				fprintf(tunLogPtr, "%sBITRATE : !!!***** Please also bear in mind that any VLANs running over a physical interface should have a MTU which\n",
+													pLearningSpacesMinusLearning);
+				fprintf(tunLogPtr, "%sBITRATE : !!!***** is some value reasonable less than that of the interface to allow for padding from INT data.\n",
+													pLearningSpacesMinusLearning);
+			}
 
 		fflush(tunLogPtr);
         }
@@ -2481,7 +2500,7 @@ void check_if_bitrate_too_low(double average_tx_Gbits_per_sec, int * applied, in
 			{
 				fprintf(tunLogPtr, "%s %s: !!!*****BITRATE IS LOW********!!!\n", ms_ctime_buf, phase2str(current_phase));
 				if (aLocal_Ip[0])
-					fGetMtuInfoOfDevices();
+					fGetMtuInfoOfDevices(aLocal_Ip);
 				else
 					fprintf(tunLogPtr, "%s!!!*****PLEASE CHECK IF MTU of device \"%s\" is correct or MTU of VLANS on %s are correct********!!!\n", pLearningSpaces, netDevice, netDevice);
 
@@ -4647,11 +4666,8 @@ retrans:
 		return (char *)0;
 	}
 
-	int thiscount = 0;
-	int thisfoundcnt = 0;
 	while (!feof(pipe))
 	{
-		thiscount++;
 		// use buffer to read and add to result
 		if (fgets(buffer, 256, pipe) != NULL)
 		{
@@ -6073,6 +6089,11 @@ void * fDoRunGetMessageFromPeer(void * vargp)
 				}
 
 				strcpy(aLocal_Ip,localaddrpresn);
+			
+				if ((vDebugLevel > 0) && (strcmp(aLocal_Ip,aLocal_IpPrev) != 0))
+					fGetMtuInfoOfDevices(aLocal_Ip);
+				
+				strcpy(aLocal_IpPrev,aLocal_Ip);
 			}
 
 		fflush(tunLogPtr);
@@ -6178,7 +6199,10 @@ void * fDoRunSendMessageToPeer(void * vargp)
 
 	int check = 0;
 	char aSrc_Ip[32];
-
+	char aDst_Ip[32]; //Me in this case
+	char aDst_IpPrev[32];
+	
+	memset(aDst_IpPrev,0,32);
 	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
 	fprintf(tunLogPtr,"%s %s: ***Starting Client for sending messages to source DTN...***\n", ms_ctime_buf, phase2str(current_phase));
 	fflush(tunLogPtr);
@@ -6205,12 +6229,26 @@ cli_again:
 	if (sMsg2.src_ip_addr.y)
 	{
 		sprintf(aSrc_Ip,"%u.%u.%u.%u", sMsg2.src_ip_addr.a[0], sMsg2.src_ip_addr.a[1], sMsg2.src_ip_addr.a[2], sMsg2.src_ip_addr.a[3]);
+#if 1
+		sprintf(aDst_Ip,"%u.%u.%u.%u", sMsg2.dst_ip_addr.a[0], sMsg2.dst_ip_addr.a[1], sMsg2.dst_ip_addr.a[2], sMsg2.dst_ip_addr.a[3]);
+		if (!sMsg2.msg_no && (vDebugLevel > 0) && (strcmp(aDst_Ip,aDst_IpPrev) != 0)) //START message
+			fGetMtuInfoOfDevices(aDst_Ip);
+
+		strcpy(aDst_IpPrev,aDst_Ip);
+#endif
 		Inet_pton(AF_INET, aSrc_Ip, &servaddr.sin_addr);
 	}
 #else
 	if (sMsg[localMsgCount].src_ip_addr.y)
 	{
 		sprintf(aSrc_Ip,"%u.%u.%u.%u", sMsg[localMsgCount].src_ip_addr.a[0], sMsg[localMsgCount].src_ip_addr.a[1], sMsg[localMsgCount].src_ip_addr.a[2], sMsg[localMsgCount].src_ip_addr.a[3]);
+#if 1
+		sprintf(aDst_Ip,"%u.%u.%u.%u", sMsg[localMsgCount].dst_ip_addr.a[0], sMsg[localMsgCount].dst_ip_addr.a[1], sMsg[localMsgCount].dst_ip_addr.a[2], sMsg[localMsgCount].dst_ip_addr.a[3]);
+		if (!sMsg[localMsgCount].msg_no && (vDebugLevel > 0) && (strcmp(aDst_Ip,aDst_IpPrev) != 0)) //START message
+			fGetMtuInfoOfDevices(aDst_Ip);
+
+		strcpy(aDst_IpPrev,aDst_Ip);
+#endif
 		Inet_pton(AF_INET, aSrc_Ip, &servaddr.sin_addr);
 	}
 #endif
@@ -6644,6 +6682,7 @@ int main(int argc, char **argv)
 	memset(aDest_Ip2,0,sizeof(aDest_Ip2));
 	memset(aDest_Ip2_Binary,0,sizeof(aDest_Ip2_Binary));
 	memset(aLocal_Ip,0,sizeof(aLocal_Ip));
+	memset(aLocal_IpPrev,0,sizeof(aLocal_IpPrev));
 	memset(aSrc_Dtn_IPs, 0, sizeof (aSrc_Dtn_IPs));
 	memset(aDest_Dtn_IPs, 0, sizeof (aDest_Dtn_IPs));
 	memset(&sqOCC_TimerID_Data,0,sizeof(sqOCC_TimerID_Data));
@@ -6662,6 +6701,7 @@ int main(int argc, char **argv)
 		fprintf(tunLogPtr, "%s %s: ***You should use one of the following cores for application use when using the %s Device:\n", ms_ctime_buf, phase2str(current_phase), netDevice);
 		fprintf(tunLogPtr, "%s %s: ***%s\n", ms_ctime_buf, phase2str(current_phase), numaNodeString);
 	}
+
 	fflush(tunLogPtr);
 
 	system("rm -f /tmp/facil-io-sock-*"); //clean up old facil-io links
