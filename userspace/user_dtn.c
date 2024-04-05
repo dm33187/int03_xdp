@@ -5237,9 +5237,10 @@ return;
 
 #define SECS_TO_WAIT_RTT_MESSAGE 30
 #define SECS_TO_WAIT_MONITORCPU_MESSAGE 10
+#define SECS_TO_WAIT_KSOFT_MESSAGE 10
 void * fDoRunFindHighestRtt(void * vargp)
 {
-	time_t clk, now_time = 0, last_time = 0, cpumon_last_time = 0;;
+	time_t clk, now_time = 0, last_time = 0, cpumon_last_time = 0, ksoftmsg_last_time = 0;
 	char ctime_buf[27];
 	char ms_ctime_buf[MS_CTIME_BUF_LEN];
 	char buffer[128];
@@ -5417,7 +5418,15 @@ skiprtt:
 	fflush(tunLogPtr);
 	my_usleep(250000); //sleeps in microseconds	
 	if (vDebugLevel > 0)
-		fDoCheckSoftirqd(); //Just added
+	{
+		gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+		now_time = clk;
+		if ((now_time - ksoftmsg_last_time) > SECS_TO_WAIT_KSOFT_MESSAGE)
+		{
+			fDoCheckSoftirqd(); //Just added
+			ksoftmsg_last_time = now_time;
+		}
+	}
 	my_usleep(250000); 
 	goto rttstart;
 
