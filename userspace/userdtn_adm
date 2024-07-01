@@ -235,16 +235,26 @@ case "$1" in
 	fi
 	bpftool iter pin ./bpf_iter_tcp4.bpf.o /sys/fs/bpf/tcp4 2>/tmp/tuningmodstart.out
 
-	echo "Loading sink object and pinning map paths..."
-	if [ "$attach_type" != "xdpoffload" ]
-        then
-                bpftool prog load int-sink2+filter.bpf.o /sys/fs/bpf/test pinmaps /sys/fs/bpf/test_maps/ 2>>/tmp/tuningmodstart.out
-        else
-                bpftool prog load int-sink2+filter.bpf.o /sys/fs/bpf/test dev $nic pinmaps /sys/fs/bpf/test_maps/ 2>>/tmp/tuningmodstart.out
-        fi
+	if [ "$attach_type" = "noxdp" ]
+	then
+		donothing=1
+	else
+		echo "Loading sink object and pinning map paths..."
+		if [ "$attach_type" != "xdpoffload" ]
+        	then
+               		bpftool prog load int-sink2+filter.bpf.o /sys/fs/bpf/test pinmaps /sys/fs/bpf/test_maps/ 2>>/tmp/tuningmodstart.out
+        	else
+                	bpftool prog load int-sink2+filter.bpf.o /sys/fs/bpf/test dev $nic pinmaps /sys/fs/bpf/test_maps/ 2>>/tmp/tuningmodstart.out
+        	fi
+	fi
 
-	echo "Attaching bpf program to network interface using $attach_type..."
-	bpftool net attach $attach_type pinned /sys/fs/bpf/test dev $nic
+	if [ "$attach_type" = "noxdp" ]
+	then
+		donothing=1
+	else	
+		echo "Attaching bpf program to network interface using $attach_type..."
+		bpftool net attach $attach_type pinned /sys/fs/bpf/test dev $nic
+	fi
 	sleep 1
 	echo "Starting user_dtn process..."
         ./user_dtn $2
@@ -283,24 +293,32 @@ case "$1" in
         # kill the user_dtn daemon
         KillNamedProcess ./user_dtn
 	sleep 1
-	echo "Detaching bpf program from NIC..."
-	bpftool net detach $attach_type dev $nic
 
+	if [ "$attach_type" = "noxdp" ]
+	then
+		donothing=1
+	else
+		echo "Detaching bpf program from NIC..."
+		bpftool net detach $attach_type dev $nic
+	fi
 	sleep 1
-	echo "Removing bpf tuning module map directories no longer needed..."
+	
 	if [ -d /sys/fs/bpf/test_maps ]
 	then
+		echo "Removing bpf tuning module map directories no longer needed..."
 		rm -rf /sys/fs/bpf/test_maps
 	fi
 	
 	sleep 1
-	echo "Removing bpf tuning module files no longer needed..."
+	
 	if [ -f /sys/fs/bpf/test ]
 	then
+		echo "Removing bpf tuning module files no longer needed..."
 		rm -f /sys/fs/bpf/test
 	fi
 	
 	sleep 1
+
 	echo "Removing iter files no longer needed..."
 	if [ -f /sys/fs/bpf/tcp4 ]
 	then

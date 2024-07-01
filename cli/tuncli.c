@@ -21,7 +21,8 @@ static char * Usage = "This is an HTTP client to talk to Tuning Module. \
 		       \nUse \"tuncli -ct retrans_rate [value]\" to change maximum retransmission rate allowed.\
 		       \nUse \"tuncli -ct pacing_rate [value]\" to change pacing rate to use. This is a percentage value.\
 		       \nUse \"tuncli -rtt thresh [value]\" to change the value of the rtt threshold. \
-		       \nUse \"tuncli -rtt factor [value]\" to change the value of the rtt factor.\n";
+		       \nUse \"tuncli -rtt factor [value]\" to change the value of the rtt factor. \
+		       \nUse \"tuncli -kaf ip4 [value]\" when using Kafka, dot notation ip4 destination address used in transfer.\n";
 
 		      
 //Was using thisin there. Took out for now
@@ -54,7 +55,7 @@ int main(int argc, const char *argv[])
 		goto carry_on;
 	}
 	else
-		if (((strcmp(argv[1],"-b") == 0) || (strcmp(argv[1],"-ct") == 0) || (strcmp(argv[1],"-rtt") == 0)) && argc == 4)
+		if (((strcmp(argv[1],"-b") == 0) || (strcmp(argv[1],"-ct") == 0) || (strcmp(argv[1],"-rtt") == 0) || (strcmp(argv[1],"-kaf") == 0)) && argc == 4)
 		{
 			sprintf(aSecondPart,"%s#%s#%s",argv[1], argv[2],argv[3]);
 			goto carry_on;
