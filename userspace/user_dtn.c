@@ -3075,6 +3075,95 @@ return;
 #endif
 
 #if 1
+void fDoCleanupResetPacing2(void);
+void fDoCleanupResetPacing2(void)
+{
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	char aNicSetting[1024];
+
+	//sprintf(aNicSetting,"tc qdisc change dev %s root fq nopacing", netDevice);
+	sprintf(aNicSetting,"tc qdisc del dev %s root 2>/dev/null", netDevice);
+	
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***WARNING***: Received *CleanupResetPacing* message from a destination DTN...***\n", ms_ctime_buf, phase2str(current_phase));
+
+	if (shm_read(&sResetPacingBack, shm) && sResetPacingBack.set) //reset back the pacing
+	{
+		if (gTuningMode)
+		{
+			sResetPacingBack.set = 0;
+			sResetPacingBack.current_pacing = 0.0;
+			shm_write(shm, &sResetPacingBack);
+ 					
+			fprintf(tunLogPtr,"%s %s: ***INFO***: *** resetting back the Pacing with the following:\n",ms_ctime_buf, phase2str(current_phase));
+			fprintf(tunLogPtr,"%s %s: ***INFO***: *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
+			system(aNicSetting);
+			fprintf(tunLogPtr,"%s %s: ***INFO***: !!!!Pacing has been reset!!!!\n", ms_ctime_buf, phase2str(current_phase));
+#if 0
+			if (sResetPacingBack.set == NOPACING_FLAG_SET)
+			{
+				if (vDebugLevel > 2)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: pacing already set to NOPACING, nothing to do... \n", ms_ctime_buf, phase2str(current_phase));
+				}
+				goto leavethis2;
+			}
+			else
+				if (sResetPacingBack.set == REGULAR_PACING_FLAG_SET)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: Resetting pacing to NOPACING... \n", ms_ctime_buf, phase2str(current_phase));
+					
+					sResetPacingBack.set = NOPACING_FLAG_SET;
+					sResetPacingBack.current_pacing = 0.0;
+					shm_write(shm, &sResetPacingBack);
+
+ 					fprintf(tunLogPtr,"%s %s: ***INFO***: *** resetting back the Pacing with the following:\n",ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***INFO***: *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
+					system(aNicSetting);
+					fprintf(tunLogPtr,"%s %s: ***INFO***: !!!!Pacing has been reset!!!!\n", ms_ctime_buf, phase2str(current_phase));
+				}
+				else //shoudn't happen
+					{
+						if (vDebugLevel > 0)
+							fprintf(tunLogPtr,"%s %s: ***ERROR2***: Something off.  This shouldn't happen.\n", ms_ctime_buf, phase2str(current_phase));
+						goto leavethis2;
+					}
+#endif
+		}
+		else
+			{
+				if (vDebugLevel > 0)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: The pacing was changed and should be changed back, but Learning Mode is on.***", 
+																	ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: The simplest way to change back is to turn off Learning Mode and the Tuning Module will do it for you***\n", 
+																	ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: Do the following from the Tuning Module directory to turn off Learning mode: \"./tuncli -l off\"\n", 
+																	ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: You probably want to turn back on Learning mode after waiting a couple seconds with the following: \"./tuncli -l on\"\n", 
+																	ms_ctime_buf, phase2str(current_phase));
+				}
+			}
+	}
+	else
+		{
+			if (gTuningMode)
+			{
+ 				fprintf(tunLogPtr,"%s %s: ***INFO***: *** Pacing must have been reset already or never changed. Nothing to do here***\n",ms_ctime_buf, phase2str(current_phase));
+			}
+			else
+				{
+					if (vDebugLevel > 0)
+ 						fprintf(tunLogPtr,"%s %s: ***INFO***: *** Pacing must have been reset already or never changed. Nothing to do here***\n",
+																	ms_ctime_buf, phase2str(current_phase));
+				}
+		}
+leavethis2:
+return;
+}
+
 void fDoCleanupResetPacing(void);
 void fDoCleanupResetPacing(void)
 {
@@ -3123,6 +3212,110 @@ void fDoCleanupResetPacing(void)
 				}
 		}
 
+return;
+}
+
+void fDoResetPacing2(char aSrc_Ip[], char aDest_Ip[], __u32 dest_ip_addr);
+void fDoResetPacing2(char aSrc_Ip[], char aDest_Ip[], __u32 dest_ip_addr)
+{
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	char aNicSetting[1024];
+	int found = 0;
+
+	//sprintf(aNicSetting,"tc qdisc del dev %s root fq 2>/dev/null", netDevice);
+	//sprintf(aNicSetting,"tc qdisc del dev %s root 2>/dev/null", netDevice);
+	sprintf(aNicSetting,"tc qdisc change dev %s root fq nopacing", netDevice);
+	
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***WARNING***: ResetPacing message from destination DTN %s***\n", ms_ctime_buf, phase2str(current_phase), aDest_Ip);
+
+	for (int i = 0; i < MAX_NUM_IP_ATTACHED; i++)
+	{
+		if (!aDest_Dtn_IPs[i].dest_ip_addr)
+			continue;
+		if (dest_ip_addr != aDest_Dtn_IPs[i].dest_ip_addr)
+			continue;
+
+		found = 1;
+		break;
+	}
+
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+
+	if (found && shm_read(&sResetPacingBack, shm) && sResetPacingBack.set) //reset back the pacing
+	{
+		if (gTuningMode)
+		{
+			if (sResetPacingBack.set == NOPACING_FLAG_SET)
+			{
+				if (vDebugLevel > 2)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: pacing already set to NOPACING, nothing to do... \n", ms_ctime_buf, phase2str(current_phase));
+				}
+				goto leavethis3;
+			}
+			else
+				if (sResetPacingBack.set == REGULAR_PACING_FLAG_SET)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: Resetting pacing to NOPACING... \n", ms_ctime_buf, phase2str(current_phase));
+					
+					sResetPacingBack.set = NOPACING_FLAG_SET;
+					sResetPacingBack.current_pacing = 0.0;
+					shm_write(shm, &sResetPacingBack);
+
+ 					fprintf(tunLogPtr,"%s %s: ***INFO***: *** resetting back the Pacing with the following:\n",ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***INFO***: *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting);
+					system(aNicSetting);
+					fprintf(tunLogPtr,"%s %s: ***INFO***: !!!!Pacing has been reset!!!!\n", ms_ctime_buf, phase2str(current_phase));
+				}
+				else //shoudn't happen
+					{
+						if (vDebugLevel > 0)
+							fprintf(tunLogPtr,"%s %s: ***ERROR2***: Something off.  This shouldn't happen.\n", ms_ctime_buf, phase2str(current_phase));
+						goto leavethis3;
+					}
+		}
+		else
+			{
+				if (vDebugLevel > 0)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: The pacing was changed and should be changed back, but Learning Mode is on.***", 
+																	ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: The simplest way to change back is to turn off Learning Mode and the Tuning Module will do it for you***\n", 
+																	ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: Do the following from the Tuning Module directory to turn off Learning mode: \"./tuncli -l off\"\n", 
+																	ms_ctime_buf, phase2str(current_phase));
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: You probably want to turn back on Learning mode after waiting a couple seconds with the following: \"./tuncli -l on\"\n",
+						       											ms_ctime_buf, phase2str(current_phase));
+				}
+			}
+	}
+	else
+		if (found && shm_read(&sResetPacingBack, shm) && !sResetPacingBack.set) //no need to reset pacing
+		{
+			if (gTuningMode)
+			{
+ 				fprintf(tunLogPtr,"%s %s: ***INFO***: *** The Pacing was never changed. No need to reset***\n",ms_ctime_buf, phase2str(current_phase));
+			}
+			else
+				{
+					if (vDebugLevel > 0)
+ 						fprintf(tunLogPtr,"%s %s: ***INFO***: *** The Pacing was never changed. No need to reset***\n",ms_ctime_buf, phase2str(current_phase));
+				}
+		}
+		else
+			if (!found)
+			{
+				if (vDebugLevel > 0)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: Some Destination DTN with IP %s, wanted the Pacing on the link resetted...***\n", 
+																ms_ctime_buf, phase2str(current_phase), aDest_Ip);
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: However, We are not currently attached to that DTN, so the link may have been broken... no changes to Pacing in this case....***\n", ms_ctime_buf, phase2str(current_phase));
+				}
+			}
+leavethis3:
 return;
 }
 
@@ -3201,20 +3394,6 @@ return;
 //This is Kafka Three - Italo fix
 //
 //
-void fSetInitialPacing(void);
-void fSetInitialPacing(void)
-{
-	char aNicRemovePacing[1024];
-
-	sprintf(aNicRemovePacing,"tc qdisc del dev %s root 2>/dev/null; tc qdisc add dev %s root fq nopacing", netDevice, netDevice);
-	sResetPacingBack.set = NOPACING_FLAG_SET;
-	sResetPacingBack.current_pacing = 0.0;
-	shm_write(shm, &sResetPacingBack);
-	system(aNicRemovePacing);
-
-return;
-}
-
 void fDoQinfoAssessmentKafka(rd_kafka_t *consumer, rd_kafka_message_t *consumer_message);
 void fDoQinfoAssessmentKafka(rd_kafka_t *consumer, rd_kafka_message_t *consumer_message)
 {
@@ -3702,6 +3881,325 @@ return;
 
 #if 1
 //QinofAssessment 2 New
+void fDoQinfoAssessment2(unsigned int val, unsigned int hop_delay, char aSrc_Ip[], char aDest_Ip[], __u32 dest_ip_addr);
+void fDoQinfoAssessment2(unsigned int val, unsigned int hop_delay, char aSrc_Ip[], char aDest_Ip[], __u32 dest_ip_addr)
+{
+	time_t clk;
+	char ctime_buf[27];
+	char ms_ctime_buf[MS_CTIME_BUF_LEN];
+	char aNicSetting1[1024];
+	char aNicSetting2[1024];
+	char aNicSetting3[1024];
+	int vNicSet1 = 0, vNicSet2 = 0, vNicSet3 = 0;
+	int found = 0;
+	int vIsVlan = 0;
+	int vModifyPacing = 0;
+	int vPacingFlag = 0;
+
+	double vRetransmissionRate = 0.0;
+	double vThis_app_tx_Gbits_per_sec;
+	double vThis_average_tx_Gbits_per_sec = 0.0, vNewPacingValue = 0.0;
+	double vFDevSpeed = (netDeviceSpeed/1000.00);
+
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	fprintf(tunLogPtr,"%s %s: ***WARNING***: Qinfo message with value %u from destination DTN %s***\n", ms_ctime_buf, phase2str(current_phase), val, aDest_Ip);
+
+	for (int i = 0; i < MAX_NUM_IP_ATTACHED; i++)
+	{
+		if (!aDest_Dtn_IPs[i].dest_ip_addr)
+			continue;
+		if (dest_ip_addr != aDest_Dtn_IPs[i].dest_ip_addr)
+			continue;
+
+		vRetransmissionRate = aDest_Dtn_IPs[i].sRetransmission_Cntrs.vRetransmissionRate;
+		vThis_app_tx_Gbits_per_sec = aDest_Dtn_IPs[i].vThis_app_tx_Gbits_per_sec;
+		vIsVlan = aDest_Dtn_IPs[i].vIsVlan;
+		found = 1;
+		break;
+	}
+	
+	if (vDebugLevel > 0)
+		fprintf(tunLogPtr,"%s %s: ***WARNING***: vFDevSpeed is %.2f Gb/s on the link \n", ms_ctime_buf, phase2str(current_phase), vFDevSpeed);
+
+#ifdef USEGLOBALRETRAN
+	vRetransmissionRate = vGlobalRetransmissionRate;
+	if (vDebugLevel > 2)
+		fprintf(tunLogPtr,"%s %s: ***INFO***: Using Global Retransmissionrate \n", ms_ctime_buf, phase2str(current_phase));
+#endif
+
+
+	vThis_average_tx_Gbits_per_sec = vGlobal_average_tx_Gbits_per_sec;
+	
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+
+	if (!vThis_average_tx_Gbits_per_sec)
+	{
+		if (vDebugLevel > 1)
+		{
+			fprintf(tunLogPtr,"%s %s: ***WARNING***: Looks like 0.0 Gb/s on the link. Nothing to do... \n", ms_ctime_buf, phase2str(current_phase));
+		}
+
+		return;
+	}
+
+	if (vDebugLevel > 1)
+		fprintf(tunLogPtr,"%s %s: ***WARNING***: Bitrate is %.2f Gb/s on the link \n", ms_ctime_buf, phase2str(current_phase), vThis_average_tx_Gbits_per_sec);
+
+	vNewPacingValue = vThis_average_tx_Gbits_per_sec * vMaxPacingRate;
+	
+	if (vNewPacingValue > 34.0) //pacing would be greater than NIC speed
+	{
+		if (vDebugLevel > 1)
+		{
+			fprintf(tunLogPtr,"%s %s: ***WARNING***: New pacing value is %.2f and would be close to speed of NIC %.2f, Will reset pacing to NOPACING if needed... \n",
+															ms_ctime_buf, phase2str(current_phase), vNewPacingValue, 40.0);
+		}
+
+		vNewPacingValue = 40.0; //Force it to max
+	}
+
+	if (vNewPacingValue < 2.0)
+	{
+		fprintf(tunLogPtr,"%s %s: ***WARNING***: Pacing Value would be  below 2.0 Gb/s. Will adjust to 2.0 Gb/s...\n", ms_ctime_buf, phase2str(current_phase));
+		vNewPacingValue = 2.0;
+	}
+
+	gettimeWithMilli(&clk, ctime_buf, ms_ctime_buf);
+	if (found && hop_delay)
+	{
+		fprintf(tunLogPtr,"%s %s: ***WARNING***: The Destination IP %s, has a queue occupancy of %u and a hop_delay of %u.\n", ms_ctime_buf, phase2str(current_phase), aDest_Ip, val, hop_delay);
+#if 1
+		if (shm_read(&sResetPacingBack, shm) && sResetPacingBack.set)
+		{
+			if (vNewPacingValue == 40.0)
+			{
+				if (sResetPacingBack.set == NOPACING_FLAG_SET)
+				{
+					if (vDebugLevel > 2)
+					{
+						fprintf(tunLogPtr,"%s %s: ***WARNING***: New pacing value of %.2f would be close or above speed of NIC %.2f and NOPACING already set. Nothing to be done \n",
+																ms_ctime_buf, phase2str(current_phase), vNewPacingValue, vFDevSpeed);
+					}
+					goto leavethis;
+				}
+				else
+					if (sResetPacingBack.set == REGULAR_PACING_FLAG_SET)
+					{
+						vModifyPacing = 1;
+						vPacingFlag = NOPACING_FLAG_SET;
+						vNicSet1 = 1;
+						sprintf(aNicSetting1,"tc qdisc change dev %s root fq nopacing", netDevice);
+
+						if (vDebugLevel > 2)
+						{
+							fprintf(tunLogPtr,"%s %s: ***WARNING***: New pacing value of %.2f would be close or above speed of NIC %.2f, Resetting pacing to NOPACING... \n",
+															ms_ctime_buf, phase2str(current_phase), vNewPacingValue, vFDevSpeed);
+							fprintf(tunLogPtr,"%s %s: ***WARNING***: Adjusting using *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting1);
+						}
+					}
+					else //shoudn't happen
+						{
+							if (vDebugLevel > 0)
+								fprintf(tunLogPtr,"%s %s: ***ERROR1***: Something off.  This shoudn't happen.\n", ms_ctime_buf, phase2str(current_phase));
+
+							goto leavethis;
+						}
+			}
+			else
+				{
+					sprintf(aNicSetting3,"tc qdisc change dev %s root fq maxrate %.2fgbit pacing", netDevice, vNewPacingValue);
+					vNicSet3 = 1;
+					vModifyPacing = 1;
+					vPacingFlag = REGULAR_PACING_FLAG_SET;
+				}
+		}
+		else
+			{ //not setup yet.  Let's do initial setup...
+				if (vNewPacingValue > 34)
+					vNewPacingValue = 34;
+
+				sprintf(aNicSetting1,"tc qdisc del dev %s root 2>/dev/null; tc qdisc add dev %s root fq maxrate %.2fgbit", netDevice, netDevice, vNewPacingValue);
+				vPacingFlag = REGULAR_PACING_FLAG_SET;
+				vModifyPacing = 1;
+				vNicSet1 = 1;
+			}
+#endif
+		if (gTuningMode)
+		{
+			if (vModifyPacing)
+			{
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current bitrate on the link is %.2f Gb/s. Will adjust the pacing based on this value.\n",
+																ms_ctime_buf, phase2str(current_phase), vThis_average_tx_Gbits_per_sec);
+				
+				if (vNicSet1)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: Adjusting using *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting1);
+					system(aNicSetting1);
+				}
+				if (vNicSet2)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: Adjusting using *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting2);
+					system(aNicSetting2);
+				}
+				if (vNicSet3)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: Adjusting using *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting3);
+					system(aNicSetting3);
+				}
+			
+				sResetPacingBack.set = vPacingFlag;
+				sResetPacingBack.current_pacing = vNewPacingValue;
+				shm_write(shm, &sResetPacingBack);
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: !!!!Pacing has been adjusted!!!! %d\n", ms_ctime_buf, phase2str(current_phase), sResetPacingBack.set);
+			}
+		}
+ 		else
+			if (vDebugLevel > 2)
+			{
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current bitrate on the link is %.2f Gb/s. Try running the following:\n",
+														ms_ctime_buf, phase2str(current_phase), vThis_average_tx_Gbits_per_sec);
+
+				if (vNicSet1)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: \"%s\"\n", ms_ctime_buf, phase2str(current_phase), aNicSetting1);
+				}
+				if (vNicSet2)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: \"%s\"\n", ms_ctime_buf, phase2str(current_phase), aNicSetting2);
+				}
+				if (vNicSet3)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: \"%s\"\n", ms_ctime_buf, phase2str(current_phase), aNicSetting3);
+				}
+			}
+	}
+	else
+ 		if (found && !hop_delay && (vRetransmissionRate > vRetransmissionRateThreshold)) //!hop_delay means we are also using ueue occuoancy and retransmission rate
+		{
+			if (vDebugLevel > 2)
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: The Destination IP %s, with the retransmission rate of %.5f is higher that the retansmission threshold of %.5f.\n", 
+											ms_ctime_buf, phase2str(current_phase), aDest_Ip, vRetransmissionRate, vRetransmissionRateThreshold);
+			if (shm_read(&sResetPacingBack, shm) && sResetPacingBack.set)
+			{
+				if (vNewPacingValue == 40.0)
+				{
+					if (sResetPacingBack.set == NOPACING_FLAG_SET)
+					{
+						if (vDebugLevel > 2)
+						{
+							fprintf(tunLogPtr,"%s %s: ***WARNING***: New pacing value of %.2f would be close or above speed of NIC %.2f and NOPACING already set. Nothing to be done \n",
+																ms_ctime_buf, phase2str(current_phase), vNewPacingValue, vFDevSpeed);
+						}
+						goto leavethis;
+					}
+					else
+						if (sResetPacingBack.set == REGULAR_PACING_FLAG_SET)
+						{
+							vModifyPacing = 1;
+							vPacingFlag = NOPACING_FLAG_SET;
+							vNicSet1 = 1;
+							sprintf(aNicSetting1,"tc qdisc change dev %s root fq nopacing", netDevice);
+
+							if (vDebugLevel > 2)
+							{
+								fprintf(tunLogPtr,"%s %s: ***WARNING***: New pacing value of %.2f would be close or above speed of NIC %.2f, Resetting pacing to NOPACING... \n",
+																ms_ctime_buf, phase2str(current_phase), vNewPacingValue, vFDevSpeed);
+								fprintf(tunLogPtr,"%s %s: ***WARNING***: Adjusting using *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting1);
+							}
+						}
+						else //shoudn't happen
+							{
+								fprintf(tunLogPtr,"%s %s: ***ERROR1***: Something off.  This shouldn't happen.\n", ms_ctime_buf, phase2str(current_phase));
+								goto leavethis;
+							}
+				}
+				else
+					{
+						sprintf(aNicSetting3,"tc qdisc change dev %s root fq maxrate %.2fgbit pacing", netDevice, vNewPacingValue);
+						vNicSet3 = 1;
+						vModifyPacing = 1;
+						vPacingFlag = REGULAR_PACING_FLAG_SET;
+					}
+#if 1
+			}
+			else
+				{ //not setup yet.  Let's do initial setup...
+					if (vNewPacingValue > 34)
+						vNewPacingValue = 34;
+
+					sprintf(aNicSetting1,"tc qdisc del dev %s root 2>/dev/null; tc qdisc add dev %s root fq maxrate %.2fgbit", netDevice, netDevice, vNewPacingValue);
+					vNicSet1 = 1;
+					vModifyPacing = 1;
+					vPacingFlag = REGULAR_PACING_FLAG_SET;
+				}
+#endif
+			if (gTuningMode)
+			{
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current bitrate on the link is %.2f Gb/s. Will adjust the pacing based on this value.\n",
+																				ms_ctime_buf, phase2str(current_phase), vThis_average_tx_Gbits_per_sec);
+				if (vNicSet1)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: Adjusting using *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting1);
+					system(aNicSetting1);
+				}
+				if (vNicSet2)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: Adjusting using *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting2);
+					system(aNicSetting2);
+				}
+				if (vNicSet3)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: Adjusting using *%s*\n", ms_ctime_buf, phase2str(current_phase), aNicSetting3);
+					system(aNicSetting3);
+				}
+
+				sResetPacingBack.set = REGULAR_PACING_FLAG_SET;
+				sResetPacingBack.current_pacing = vNewPacingValue;
+				shm_write(shm, &sResetPacingBack);
+				fprintf(tunLogPtr,"%s %s: ***WARNING***: !!!!Pacing has been adjusted!!!! %d\n", ms_ctime_buf, phase2str(current_phase), sResetPacingBack.set);
+			}
+			else
+				if (vDebugLevel > 2)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link. Current bitrate on the link is %.2f Gb/s. Try running the following:\n", 
+																			ms_ctime_buf, phase2str(current_phase), vThis_average_tx_Gbits_per_sec);
+					if (vNicSet1)
+					{
+						fprintf(tunLogPtr,"%s %s: ***WARNING***: \"%s\"\n", ms_ctime_buf, phase2str(current_phase), aNicSetting1);
+					}
+					if (vNicSet2)
+					{
+						fprintf(tunLogPtr,"%s %s: ***WARNING***: \"%s\"\n", ms_ctime_buf, phase2str(current_phase), aNicSetting2);
+					}
+					if (vNicSet3)
+					{
+						fprintf(tunLogPtr,"%s %s: ***WARNING***: \"%s\"\n", ms_ctime_buf, phase2str(current_phase), aNicSetting3);
+					}
+
+				}
+		}
+		else
+			if (!found)
+			{
+				if (vDebugLevel > 2)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: The Destination DTN with IP %s, complained that congestion was on the link...***\n", 
+																ms_ctime_buf, phase2str(current_phase), aDest_Ip);
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: However, We are not currently attached to that DTN, so the link may have been broken... no changes to Pacing in this case....***\n", ms_ctime_buf, phase2str(current_phase));
+				}
+			}
+			else	
+				if (vDebugLevel > 2)
+				{
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: It appears that congestion is on the link with a current bitrate of %.2f Gb/s.:***\n", ms_ctime_buf, phase2str(current_phase), vThis_average_tx_Gbits_per_sec);
+					fprintf(tunLogPtr,"%s %s: ***WARNING***: However, the retransmission rate of %.5f is lower that the retansmission threshold of %.5f**\n",
+												ms_ctime_buf, phase2str(current_phase), vRetransmissionRate, vRetransmissionRateThreshold);
+				}
+leavethis:
+	fflush(tunLogPtr);
+return;
+}
+
 void fDoQinfoAssessment(unsigned int val, unsigned int hop_delay, char aSrc_Ip[], char aDest_Ip[], __u32 dest_ip_addr);
 void fDoQinfoAssessment(unsigned int val, unsigned int hop_delay, char aSrc_Ip[], char aDest_Ip[], __u32 dest_ip_addr)
 {
@@ -6410,7 +6908,7 @@ process_request(int sockfd)
 									ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.msg_no), ntohl(from_cli.value), aSrc_Ip, aDest_Ip, from_cli.msg);
 			}
 
-			fDoQinfoAssessment(ntohl(from_cli.value), ntohl(from_cli.vHopDelay), aSrc_Ip, aDest_Ip, uDst_Ip.y);
+			fDoQinfoAssessment2(ntohl(from_cli.value), ntohl(from_cli.vHopDelay), aSrc_Ip, aDest_Ip, uDst_Ip.y);
 		}
 		else
 			if (ntohl(from_cli.msg_no) == RESET_PACING_MSG)
@@ -6422,7 +6920,7 @@ process_request(int sockfd)
 										ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.msg_no), ntohl(from_cli.value), aSrc_Ip, aDest_Ip, from_cli.msg);
 				}
 
-				fDoResetPacing(aSrc_Ip, aDest_Ip, uDst_Ip.y);
+				fDoResetPacing2(aSrc_Ip, aDest_Ip, uDst_Ip.y);
 			}
 			else
 				if (ntohl(from_cli.msg_no) == TEST_MSG)
@@ -6446,7 +6944,7 @@ process_request(int sockfd)
 											ms_ctime_buf, phase2str(current_phase), ntohl(from_cli.msg_no), aSrc_Ip, from_cli.msg);
 						}
 				
-						fDoCleanupResetPacing();
+						fDoCleanupResetPacing2();
 					}
 					else
 						if (vDebugLevel > 2)
@@ -7379,7 +7877,6 @@ int main(int argc, char **argv)
 		else
 			fprintf(tunLogPtr, "%s %s: *qEvaluation_TimerID* timer created.\n", ms_ctime_buf, phase2str(current_phase));
 
-		//fSetInitialPacing(); //for Kafka for now
 	}
 
 	//Start Http server Thread	
